@@ -26,6 +26,15 @@ const UI = {
 
     this._buildCharPicker();
 
+    document.querySelectorAll('[data-gfx] .gfx-opt').forEach(el => {
+      el.onclick = () => {
+        Game._qualityLocked = true;      // an explicit choice wins over auto-tuning
+        Game.setQuality(el.dataset.q);
+        SFX.resume(); SFX.tone(760, 0.05, 'square', 0.1);
+      };
+    });
+    this.syncQuality();
+
     this.el.playbtn.onclick = () => Game.start();
     document.getElementById('resumebtn').onclick = () => Game.togglePause();
     document.getElementById('quitbtn').onclick = () => Game.quitToMenu();
@@ -33,6 +42,12 @@ const UI = {
     this.el.rerollBtn.onclick = () => Game.reroll();
 
     this.showBest();
+  },
+
+  syncQuality() {
+    document.querySelectorAll('[data-gfx] .gfx-opt').forEach(el => {
+      el.classList.toggle('sel', el.dataset.q === GFX.tier);
+    });
   },
 
   showBest() {

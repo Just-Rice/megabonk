@@ -112,6 +112,13 @@ const Player = {
     this.mesh = this._buildMesh(this.char.colors);
     this.mesh.position.copy(this.pos);
     scene.add(this.mesh);
+
+    // The ground blob lives in world space, not under the character: it has to
+    // stay level with the terrain while the character spins, and its verts get
+    // re-projected onto the height field so it never sinks into a slope.
+    if (this.blob) scene.remove(this.blob);
+    this.blob = GFX.blob(0.92, 0.3);
+    scene.add(this.blob);
   },
 
   disposeMesh() {
@@ -126,10 +133,7 @@ const Player = {
   _buildMesh(c) {
     const g = new THREE.Group();
     const mk = (w, h, d, color, x, y, z) => {
-      const m = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshLambertMaterial({ color, flatShading: true })
-      );
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), GFX.lambert(color));
       m.position.set(x, y, z);
       m.castShadow = true;
       return m;
@@ -144,7 +148,13 @@ const Player = {
     const eyeR = mk(0.16, 0.2, 0.1, 0x111111, 0.22, 2.45, 0.44);
     const armL = mk(0.3, 0.85, 0.3, c.skin, -0.72, 1.55, 0);
     const armR = mk(0.3, 0.85, 0.3, c.skin, 0.72, 1.55, 0);
-    body.add(torso, head, hat, brim, eyeL, eyeR, armL, armR);
+    // little details that read at gameplay distance
+    const glintL = mk(0.07, 0.09, 0.05, 0xffffff, -0.25, 2.49, 0.47);
+    const glintR = mk(0.07, 0.09, 0.05, 0xffffff, 0.19, 2.49, 0.47);
+    const belt = mk(1.16, 0.18, 0.76, 0x2a2333, 0, 1.06, 0);
+    const buckle = mk(0.22, 0.22, 0.06, 0xffd23d, 0, 1.06, 0.4);
+    const cape = mk(0.95, 1.15, 0.12, c.hat, 0, 1.5, -0.42);
+    body.add(torso, head, hat, brim, eyeL, eyeR, armL, armR, glintL, glintR, belt, buckle, cape);
 
     const legL = mk(0.36, 0.9, 0.36, c.pants, -0.27, 0.5, 0);
     const legR = mk(0.36, 0.9, 0.36, c.pants, 0.27, 0.5, 0);
@@ -152,16 +162,7 @@ const Player = {
     g.add(body, legL, legR);
     this.parts = { body, torso, head, hat, armL, armR, legL, legR };
 
-    // soft blob shadow so the character reads against the terrain
-    const blob = new THREE.Mesh(
-      new THREE.CircleGeometry(0.8, 18),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.26, depthWrite: false })
-    );
-    blob.rotation.x = -Math.PI / 2;
-    blob.position.y = 0.03;
-    g.add(blob);
-    this.parts.blob = blob;
-
+    this.parts.cape = cape;
     return g;
   },
 
@@ -175,6 +176,7 @@ const Player = {
     this.invuln = 0.7;
     this.hurtFlash = 0.35;
     FX.kick(0.5);
+    PostFX.flash(0.5, 0xff2d4a);
     FX.damage(this.pos, reduced, { color: '#ff5570' });
     SFX.ouch();
 
@@ -332,7 +334,12 @@ const Player = {
     const blink = this.invuln > 0 && Math.floor(this.invuln * 14) % 2 === 0;
     this.mesh.visible = !blink;
     const tint = this.hurtFlash > 0 ? 0xff4444 : this.char.colors.body;
-    if (p.torso.material.color.getHex() !== tint) p.torso.material.color.setHex(tint);
+    if (this._tint !== tint) { this._tint = tint; GFX.setCol(p.torso.material.color, tint); }
+
+    // cape trails behind the run
+    if (p.cape) {
+      p.cape.rotation.x = -U.clamp(speedNow / 9, 0, 1) * 0.55 - Math.sin(this.bobT * 3.2) * 0.06;
+    }
 
     // regen
     if (st.hpRegen > 0 && this.hp > 0) this.heal2(st.hpRegen * dt);
@@ -340,10 +347,15 @@ const Player = {
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.y = this.facing;
 
-    // blob shadow hugs the terrain under the player when airborne
-    p.blob.position.y = (ground - this.pos.y) + 0.05;
-    const air = U.clamp(1 - (this.pos.y - ground) / 6, 0.35, 1);
-    p.blob.scale.setScalar(air);
+    // ground blob: sits on the terrain surface and shrinks as you jump
+    if (this.blob) {
+      const air = U.clamp(1 - (this.pos.y - ground) / 7, 0.3, 1);
+      const r = 0.92 * air;
+      this.blob.visible = GFX.q.blobs;
+      this.blob.position.set(this.pos.x, ground, this.pos.z);
+      this.blob.material.opacity = 0.3 * air;
+      GFX.conform(this.blob, this.pos.x, this.pos.z, r, 0.07);
+    }
   },
 
   // silent regen (no floating text spam)

@@ -38,38 +38,59 @@ const Game = {
   boot() {
     const canvas = document.getElementById('scene');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+
+    GFX.setTier(U.store('quality') || this.autoTier());
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, GFX.q.pixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = GFX.q.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.autoClear = true;
+
+    // The post chain owns tone mapping and the sRGB encode. Without it we
+    // fall back to the renderer's own ACES + sRGB so colours still land right.
+    PostFX.init(this.renderer);
+    PostFX.setSize(window.innerWidth, window.innerHeight);
+    if (!GFX.q.bloom) {
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.0;
+      this.renderer.outputEncoding = THREE.sRGBEncoding;
+    }
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xf0a58f, 120, 260);
+    this.scene.fog = new THREE.Fog(GFX.col(0xe08a7a), 105, 300);
 
     this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.5, 700);
     this.camera.position.set(0, 16, 18);
 
     // ---- lights ----
-    const hemi = new THREE.HemisphereLight(0xffd9c0, 0x3a5540, 0.85);
+    const hemi = new THREE.HemisphereLight(GFX.col(0xffd9bc), GFX.col(0x3a5750), 0.62);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff0d0, 1.15);
-    sun.position.set(40, 70, 25);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    // warm key from the direction of the painted sun
+    const sun = new THREE.DirectionalLight(GFX.col(0xfff0cc), 1.85);
+    sun.position.set(48, 62, 30);
+    sun.castShadow = GFX.q.shadows;
+    sun.shadow.mapSize.set(GFX.q.shadowSize, GFX.q.shadowSize);
     const sc = sun.shadow.camera;
-    sc.near = 1; sc.far = 220;
-    sc.left = -46; sc.right = 46; sc.top = 46; sc.bottom = -46;
+    sc.near = 1; sc.far = 200;
+    sc.left = -40; sc.right = 40; sc.top = 40; sc.bottom = -40;
     sc.updateProjectionMatrix();
-    sun.shadow.bias = -0.0012;
-    sun.shadow.normalBias = 0.03;
+    sun.shadow.bias = -0.0008;
+    sun.shadow.normalBias = 0.045;
+    sun.shadow.radius = 2.5;
     this.scene.add(sun);
     this.scene.add(sun.target);
     this.sun = sun;
 
-    const rim = new THREE.DirectionalLight(0xff7ab0, 0.35);
-    rim.position.set(-40, 30, -30);
+    // cool bounce from the opposite side keeps shadowed faces from going flat
+    const rim = new THREE.DirectionalLight(GFX.col(0x8a6bff), 0.55);
+    rim.position.set(-50, 26, -34);
     this.scene.add(rim);
+
+    // low magenta kicker along the horizon
+    const kick = new THREE.DirectionalLight(GFX.col(0xff5c8a), 0.28);
+    kick.position.set(-10, 6, 60);
+    this.scene.add(kick);
 
     // ---- systems ----
     World.build(this.scene);
@@ -93,9 +114,12 @@ const Game = {
   // ---------------------------------------------------------
   _bindEvents() {
     window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
+      const w = window.innerWidth, h = window.innerHeight;
+      this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.setSize(w, h);
+      const px = this.renderer.getPixelRatio();
+      PostFX.setSize(Math.floor(w * px), Math.floor(h * px));
     });
 
     window.addEventListener('keydown', e => {
@@ -374,7 +398,64 @@ const Game = {
       this._updateCamera(dt);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    PostFX.update(dt);
+    PostFX.render(this.scene, this.camera);
+    this._autoQuality(dt);
+  },
+
+  // ---------------------------------------------------------
+  // Pick a starting tier from what the GPU reports, then keep an eye on the
+  // frame rate and step down if the machine cannot hold up.
+  autoTier() {
+    try {
+      const c = document.createElement('canvas');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      if (!gl) return 'low';
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = (dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : '').toLowerCase();
+      const weak = /(intel|swiftshader|llvmpipe|software|mali|adreno 5|powervr)/.test(name);
+      if (!gl.getContextAttributes || weak) return 'medium';
+      return 'high';
+    } catch (e) { return 'medium'; }
+  },
+
+  _autoQuality(dt) {
+    if (this.state !== 'playing' || this._qualityLocked) return;
+    this._slowT = (this._slowT || 0) + (this.fps < 42 ? dt : -dt * 0.5);
+    this._slowT = Math.max(0, this._slowT);
+    if (this._slowT > 6) {
+      this._slowT = 0;
+      if (GFX.tier === 'high') this.setQuality('medium', true);
+      else if (GFX.tier === 'medium') this.setQuality('low', true);
+      else this._qualityLocked = true;
+    }
+  },
+
+  setQuality(tier, auto) {
+    if (GFX.tier === tier) return;
+    GFX.setTier(tier);
+    U.store('quality', tier);
+    // setPixelRatio alone does not resize the drawing buffer; setSize has to
+    // run again or the tier change has no effect on fill cost
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, GFX.q.pixelRatio));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.shadowMap.enabled = GFX.q.shadows;
+    if (this.sun) {
+      this.sun.castShadow = GFX.q.shadows;
+      this.sun.shadow.mapSize.set(GFX.q.shadowSize, GFX.q.shadowSize);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    if (GFX.q.bloom) {
+      this.renderer.toneMapping = THREE.NoToneMapping;
+      this.renderer.outputEncoding = THREE.LinearEncoding;
+    } else {
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.outputEncoding = THREE.sRGBEncoding;
+    }
+    const px = this.renderer.getPixelRatio();
+    PostFX.setSize(Math.floor(window.innerWidth * px), Math.floor(window.innerHeight * px));
+    UI.syncQuality();
+    if (auto) UI.toast('GRAPHICS: ' + tier.toUpperCase(), '#3dd6ff');
   }
 };
 

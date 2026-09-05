@@ -109,6 +109,7 @@ const Weapons = {
     for (const s of this.swings) this.scene.remove(s.mesh);
     this.swings.length = 0;
     if (this.auraMesh) { this.scene.remove(this.auraMesh); this.auraMesh = null; }
+    if (this.auraFill) { this.scene.remove(this.auraFill); this.auraFill = null; }
     this.owned.length = 0;
   },
 
@@ -167,6 +168,9 @@ const Weapons = {
       gravity: opts.gravity || 0,
       spin: opts.spin || 0,
       speedCap: opts.speedCap || 0,
+      trail: opts.trail || 0,
+      trailSize: opts.trailSize || 0.2,
+      trailT: 0,
       onExpire: opts.onExpire || null,
       onHit: opts.onHit || null,
       boomerang: opts.boomerang || null,
@@ -199,17 +203,13 @@ const Weapons = {
     // sweep visual
     const mesh = this._meshFor('swing', () => {
       const g = new THREE.Group();
-      const handle = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09, 0.09, 1.7, 6),
-        new THREE.MeshLambertMaterial({ color: 0x8a5a2f, flatShading: true })
-      );
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.7, 6), GFX.lambert(0x8a5a2f));
       handle.position.y = 0.85;
-      const head = new THREE.Mesh(
-        new THREE.BoxGeometry(0.85, 0.7, 0.7),
-        new THREE.MeshLambertMaterial({ color: 0xc8ccd8, flatShading: true })
-      );
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.7, 0.7), GFX.lambert(0xc8ccd8));
       head.position.y = 1.85;
-      g.add(handle, head);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.16, 0.75), GFX.lambert(0xffd23d, { emissive: 0x6b4a00 }));
+      band.position.y = 1.85;
+      g.add(handle, head, band);
       g.castShadow = true;
       return g;
     });
@@ -227,14 +227,13 @@ const Weapons = {
       const t = Enemies.randomNear(Player.pos.x, Player.pos.z, 24);
       if (!t) break;
       const mesh = this._meshFor('missile', () => new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.3, 0),
-        new THREE.MeshBasicMaterial({ color: 0x63e0ff })
+        new THREE.OctahedronGeometry(0.32, 0), GFX.glow(0x63e0ff, 2.4)
       ));
       mesh.position.set(Player.pos.x, Player.pos.y + 1.5, Player.pos.z);
       const a = Math.random() * U.TAU;
       this._shoot({
         poolKey: 'missile', mesh, dmg, radius: 0.55, pierce: 1, homing: 9 + lvl,
-        target: t, life: 3.2, spin: 8, speedCap: speed,
+        target: t, life: 3.2, spin: 8, speedCap: speed, trail: 0x63e0ff, trailSize: 0.2,
         vel: new THREE.Vector3(Math.cos(a) * 6, U.rand(1, 4), Math.sin(a) * 6)
       });
       fired++;
@@ -255,7 +254,7 @@ const Weapons = {
       const mesh = this._meshFor('shuriken', () => {
         const g = new THREE.Mesh(
           new THREE.BoxGeometry(0.7, 0.09, 0.16),
-          new THREE.MeshLambertMaterial({ color: 0xe8e8f0, flatShading: true })
+          GFX.lambert(0xe8e8f0, { emissive: 0x7a8aa0 })
         );
         const cross = new THREE.Mesh(g.geometry, g.material);
         cross.rotation.y = Math.PI / 2;
@@ -265,7 +264,7 @@ const Weapons = {
       mesh.position.set(Player.pos.x, Player.pos.y + 1.2, Player.pos.z);
       this._shoot({
         poolKey: 'shuriken', mesh, dmg, radius: 0.6, pierce, life: 1.6, spin: 26,
-        knock: 3,
+        knock: 3, trail: 0xcfe4ff, trailSize: 0.15,
         vel: new THREE.Vector3(Math.sin(a) * speed, 0, Math.cos(a) * speed)
       });
     }
@@ -288,8 +287,11 @@ const Weapons = {
 
       // visible bolt column
       const mesh = this._meshFor('bolt', () => new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.5, 22, 5),
-        new THREE.MeshBasicMaterial({ color: 0xfff4b0, transparent: true, opacity: 0.9 })
+        new THREE.CylinderGeometry(0.22, 0.55, 22, 5),
+        new THREE.MeshBasicMaterial({
+          color: GFX.col(0xfff4b0).multiplyScalar(3.6),
+          transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false
+        })
       ));
       mesh.position.set(at.x, at.y + 11, at.z);
       mesh.material.opacity = 0.9;
@@ -321,8 +323,7 @@ const Weapons = {
       const t = Enemies.randomNear(Player.pos.x, Player.pos.z, 18);
       const dest = t ? t.pos : World.ringPoint(Player.pos, 5, 12);
       const mesh = this._meshFor('bomb', () => new THREE.Mesh(
-        new THREE.SphereGeometry(0.4, 8, 6),
-        new THREE.MeshLambertMaterial({ color: 0x222028, flatShading: true })
+        new THREE.SphereGeometry(0.4, 9, 7), GFX.lambert(0x222028, { emissive: 0x3a1200 })
       ));
       mesh.position.set(Player.pos.x, Player.pos.y + 1.4, Player.pos.z);
 
@@ -330,7 +331,7 @@ const Weapons = {
       const flight = 0.75;
       this._shoot({
         poolKey: 'bomb', mesh, dmg: 0, radius: 0.4, pierce: 0, life: flight,
-        gravity: -30, spin: 5,
+        gravity: -30, spin: 5, trail: 0xff8a3d, trailSize: 0.16,
         vel: new THREE.Vector3(dx / flight, 12, dz / flight),
         onExpire: (pp) => {
           FX.ring(pp.mesh.position, 0xff8a3d, 0.6, area * 2, 0.42);
@@ -354,7 +355,7 @@ const Weapons = {
       const a = base + (i - (n - 1) / 2) * 0.5;
       const mesh = this._meshFor('rang', () => {
         const g = new THREE.Group();
-        const mat = new THREE.MeshLambertMaterial({ color: 0xffd23d, flatShading: true });
+        const mat = GFX.lambert(0xffd23d, { emissive: 0x8a5f00 });
         const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.24), mat);
         const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.24), mat);
         b1.position.set(0.3, 0, 0.3); b1.rotation.y = 0.7;
@@ -366,6 +367,7 @@ const Weapons = {
       const speed = (15 + lvl) * Player.stats.projSpeedMul;
       this._shoot({
         poolKey: 'rang', mesh, dmg, radius: 0.8, pierce: 9999, life: 4, spin: 18,
+        trail: 0xffd23d, trailSize: 0.18,
         boomerang: { out: true, range, speed, angle: a },
         vel: new THREE.Vector3(Math.sin(a) * speed, 0, Math.cos(a) * speed)
       });
@@ -386,9 +388,10 @@ const Weapons = {
     const n = w.def.count(w.level);
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(0.45, 0),
-        new THREE.MeshLambertMaterial({ color: 0x3dd6ff, emissive: 0x105a7a, flatShading: true })
+        new THREE.IcosahedronGeometry(0.48, 0),
+        GFX.lambert(0x3dd6ff, { emissive: 0x2fa8d8 })
       );
+      mesh.material.emissive.multiplyScalar(2.1);
       mesh.castShadow = true;
       this.scene.add(mesh);
       this.orbs.push({ mesh, phase: (i / n) * U.TAU, cd: 0 });
@@ -399,20 +402,31 @@ const Weapons = {
     const w = this.get('aura');
     if (!w) return;
     if (!this.auraMesh) {
-      const geo = new THREE.RingGeometry(0.86, 1, 40);
-      geo.rotateX(-Math.PI / 2);
-      this.auraMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-        color: 0xff3d7f, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false
+      this.auraMesh = new THREE.Mesh(GFX.makeDisc(1, 56, 0.82), new THREE.MeshBasicMaterial({
+        // normal blending, not additive: over bright grass an additive pink rim
+        // washes out to tan once the bloom pass gets hold of it
+        color: GFX.col(0xff3d7f), transparent: true, opacity: 0.75,
+        side: THREE.DoubleSide, depthWrite: false
       }));
+      this.auraMesh.frustumCulled = false;
+      this.auraMesh.renderOrder = 1;
       this.scene.add(this.auraMesh);
+
+      // a filled, fainter disc inside the rim sells the field
+      this.auraFill = new THREE.Mesh(GFX.makeDisc(3, 44, 0), new THREE.MeshBasicMaterial({
+        color: GFX.col(0xff3d7f), map: GFX.ramp(), transparent: true, opacity: 0.16,
+        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+      }));
+      this.auraFill.frustumCulled = false;
+      this.auraFill.renderOrder = 1;
+      this.scene.add(this.auraFill);
     }
   },
 
   // ---------- enemy fire ----------
   enemyShot(from, toPos) {
     const mesh = this._meshFor('eshot', () => new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 7, 6),
-      new THREE.MeshBasicMaterial({ color: 0x8dff6b })
+      new THREE.SphereGeometry(0.32, 8, 6), GFX.glow(0x8dff6b, 2.2)
     ));
     mesh.position.set(from.pos.x, from.pos.y + 1.2, from.pos.z);
     const dx = toPos.x - from.pos.x, dy = (toPos.y + 1.2) - (from.pos.y + 1.2), dz = toPos.z - from.pos.z;
@@ -491,6 +505,11 @@ const Weapons = {
       if (p.gravity) p.vel.y += p.gravity * dt;
       p.mesh.position.addScaledVector(p.vel, dt);
       if (p.spin) { p.mesh.rotation.y += p.spin * dt; p.mesh.rotation.x += p.spin * 0.4 * dt; }
+
+      if (p.trail) {
+        p.trailT = (p.trailT || 0) - dt;
+        if (p.trailT <= 0) { p.trailT = 0.028; FX.trail(p.mesh.position, p.trail, p.trailSize || 0.2); }
+      }
 
       // ---- collisions ----
       if (p.pierce > 0 && p.dmg > 0) {
@@ -608,9 +627,16 @@ const Weapons = {
     const w = this.get('aura');
     if (!w || !this.auraMesh) return;
     const r = w.def.radius(w.level) * Player.stats.areaMul;
-    this.auraMesh.position.set(Player.pos.x, World.heightAt(Player.pos.x, Player.pos.z) + 0.12, Player.pos.z);
-    this.auraMesh.scale.set(r, 1, r);
-    this.auraMesh.rotation.y += dt * 0.8;
-    this.auraMesh.material.opacity = 0.22 + Math.sin(performance.now() * 0.004) * 0.08;
+    const px = Player.pos.x, pz = Player.pos.z;
+    const gy = World.heightAt(px, pz);
+    const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.02;
+
+    this.auraMesh.position.set(px, gy, pz);
+    GFX.conform(this.auraMesh, px, pz, r * pulse, 0.13);
+    this.auraMesh.material.opacity = 0.72 + Math.sin(performance.now() * 0.004) * 0.12;
+
+    this.auraFill.position.set(px, gy, pz);
+    GFX.conform(this.auraFill, px, pz, r * pulse, 0.1);
+    this.auraFill.material.opacity = 0.14 + Math.sin(performance.now() * 0.004) * 0.04;
   }
 };

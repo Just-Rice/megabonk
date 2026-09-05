@@ -31,6 +31,8 @@ python3 -m http.server 8765 && open http://localhost:8765
 | `R` | Reroll the cards |
 | `M` | Mute |
 
+Graphics quality (LOW / MED / ULTRA) is on the menu and the pause screen.
+
 Weapons fire on their own and auto-aim at the nearest enemy. You only steer, dodge, and choose upgrades.
 
 ## The run
@@ -63,6 +65,8 @@ Weapons fire on their own and auto-aim at the nearest enemy. You only steer, dod
 index.html         markup + script order
 css/style.css      HUD, menus, level-up cards
 js/util.js         math, value noise, weighted rolls, localStorage
+js/gfx.js          colour pipeline, material factory, quality tiers, ground decals
+js/postfx.js       HDR buffer, bloom, ACES tone map, vignette, grade
 js/audio.js        WebAudio synth — every sound is generated, no audio files
 js/world.js        height-field terrain, instanced props, sky, arena bounds
 js/fx.js           pooled damage numbers, particles, shockwaves, screen shake
@@ -77,6 +81,42 @@ js/game.js         renderer, camera, input, main loop
 Everything that spawns repeatedly — enemies, projectiles, damage numbers, particles, pickups — is
 pooled and reused. Enemy proximity queries go through a uniform spatial grid rather than scanning
 the whole horde, so a 200-enemy screen costs well under a millisecond of game logic per frame.
+
+## Graphics
+
+The renderer runs a proper linear-light pipeline with a hand-written post chain — no three.js
+example files, so the whole game is still one CDN script plus this repo, and still opens from disk.
+
+- **HDR scene buffer.** The scene renders into a half-float, 4× multisampled render target, so
+  highlights can exceed 1.0 instead of clamping to white.
+- **Bloom.** Bright-pass, then separable Gaussian blurs at half and quarter resolution, composited
+  back over the scene. Emissive gems, crystals, magic bolts, lightning, the sun and the water glint
+  are all authored above 1.0 specifically to catch it.
+- **ACES tone mapping**, an sRGB encode, a light saturation/contrast grade and a vignette all happen
+  in one composite pass. Every colour in the game is converted sRGB → linear on the way in, so the
+  lighting maths is done in the space it assumes.
+- **Water.** The lake is a custom shader — three summed wave trains with analytic normals, a Fresnel
+  tint, a sun glint pushed past 1.0, and per-vertex baked depth that fades the surface out at the
+  shoreline and draws foam on the shallows.
+- **Terrain.** A value-noise height field shaded by altitude, slope and two scales of colour drift,
+  with rock breaking through wherever the ground gets steep.
+- **Wind.** Grass, reeds, flowers and tree canopies sway via an injected vertex-shader term, gusting
+  on a second, slower wave.
+- **Extras.** A painted sunset sky with a blooming sun disc, distant mountain silhouettes, drifting
+  additive motes, glowing projectile trails, and soft ground blobs under every character.
+
+Quality is chosen automatically from what the GPU reports and steps itself down if the frame rate
+sags; **LOW / MED / ULTRA** are also selectable on the menu and pause screens. On low, bloom, MSAA
+and shadows switch off and the render scale drops.
+
+### Ground decals follow the terrain
+
+Anything drawn flat on the ground — the aura ring, dash and explosion shockwaves, the blob under
+each character — is a subdivided disc whose vertices are re-projected onto `World.heightAt` every
+frame, rather than a flat circle. On a flat circle, a slope buries the uphill half and floats the
+downhill side; measured on this map's steepest ground, a flat disc deviates from the surface by
+0.68 m while the projected one tracks it to within its own 0.07 m lift. The many small enemy blobs
+use a cheaper version that aligns the disc with the local ground normal.
 
 ## Notes
 

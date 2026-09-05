@@ -55,7 +55,7 @@ const Enemies = {
   // ---------- meshes ----------
   _buildMesh(typeId, def) {
     const g = new THREE.Group();
-    const mat = (c) => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+    const mat = (c) => GFX.lambert(c);
     const box = (w, h, d, c, x, y, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
       m.position.set(x, y, z); m.castShadow = true; return m;
@@ -64,8 +64,11 @@ const Enemies = {
     const dark = new THREE.Color(bodyColor).multiplyScalar(0.6).getHex();
 
     const body = box(1, 1, 0.9, bodyColor, 0, 0.75, 0);
-    const eyeL = box(0.2, 0.24, 0.1, 0xffffff, -0.24, 0.92, 0.48);
-    const eyeR = box(0.2, 0.24, 0.1, 0xffffff, 0.24, 0.92, 0.48);
+    const eyeMat = GFX.lambert(0xffffff, { emissive: 0x9a9a9a });
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), eyeMat);
+    eyeL.position.set(-0.24, 0.92, 0.48);
+    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), eyeMat);
+    eyeR.position.set(0.24, 0.92, 0.48);
     const pupL = box(0.1, 0.12, 0.06, 0x140f1f, -0.24, 0.9, 0.54);
     const pupR = box(0.1, 0.12, 0.06, 0x140f1f, 0.24, 0.9, 0.54);
     g.add(body, eyeL, eyeR, pupL, pupR);
@@ -114,12 +117,8 @@ const Enemies = {
       g.add(crown, spikes); extras.push(crown, spikes);
     }
 
-    const blob = new THREE.Mesh(
-      new THREE.CircleGeometry(0.7, 14),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false })
-    );
-    blob.rotation.x = -Math.PI / 2;
-    blob.position.y = 0.03;
+    const blob = GFX.blob(0.72, 0.3);
+    blob.scale.setScalar(0.72);
     g.add(blob);
 
     g.userData.body = body;
@@ -191,9 +190,9 @@ const Enemies = {
     mesh.scale.setScalar(0.01);
     // bosses share one mesh pool but not one colour, so re-tint on every spawn
     mesh.userData.baseColor = base.color;
-    mesh.userData.body.material.color.setHex(elite ? 0xffd23d : base.color);
+    GFX.setCol(mesh.userData.body.material.color, elite ? 0xffd23d : base.color);
     const legDark = new THREE.Color(base.color).multiplyScalar(0.6).getHex();
-    for (const leg of mesh.userData.legs) leg.material.color.setHex(legDark);
+    for (const leg of mesh.userData.legs) GFX.setCol(leg.material.color, legDark);
 
     this.list.push(e);
     return e;
@@ -474,14 +473,23 @@ const Enemies = {
         }
       }
       e.mesh.rotation.y = Math.atan2(sx, sz);
+
       const blob = e.mesh.userData.blob;
-      if (blob) blob.position.y = (ground - e.pos.y) + 0.04;
+      if (blob) {
+        blob.visible = GFX.q.blobs;
+        if (GFX.q.blobs) {
+          // offsets are in the parent's local space, which is scaled by e.scale
+          blob.position.y = (ground - e.pos.y) / e.scale + 0.05;
+          GFX.tiltToGround(blob, e.pos.x, e.pos.z, e.mesh.rotation.y);
+        }
+      }
 
       // ---- flash ----
       if (e.flash > 0) {
         e.flash -= dt;
         const col = e.flash > 0 ? 0xffffff : (e.elite ? 0xffd23d : e.mesh.userData.baseColor);
-        e.mesh.userData.body.material.color.setHex(col);
+        GFX.setCol(e.mesh.userData.body.material.color, col);
+        if (e.flash > 0) e.mesh.userData.body.material.color.multiplyScalar(1.35);
       }
 
       // ---- attacks ----
@@ -528,13 +536,18 @@ const Loot = {
         heart: new THREE.BoxGeometry(0.5, 0.5, 0.5),
         chest: new THREE.BoxGeometry(0.8, 0.6, 0.6)
       };
+      const lit = (c, e, boost) => {
+        const m = GFX.lambert(c, { emissive: e });
+        m.emissive.multiplyScalar(boost || 2.2);   // push past 1.0 so it blooms
+        return m;
+      };
       this.MATS = {
-        gem1: new THREE.MeshLambertMaterial({ color: 0x3dd6ff, emissive: 0x0d4a63 }),
-        gem2: new THREE.MeshLambertMaterial({ color: 0xb6ff3d, emissive: 0x2d5f0d }),
-        gem3: new THREE.MeshLambertMaterial({ color: 0xff3d7f, emissive: 0x6b0d2f }),
-        coin: new THREE.MeshLambertMaterial({ color: 0xffd23d, emissive: 0x5c4200 }),
-        heart: new THREE.MeshLambertMaterial({ color: 0xff5570, emissive: 0x6b0d1f }),
-        chest: new THREE.MeshLambertMaterial({ color: 0xffd23d, emissive: 0x4a3200 })
+        gem1: lit(0x3dd6ff, 0x2a9fd0),
+        gem2: lit(0xb6ff3d, 0x74c41f),
+        gem3: lit(0xff3d7f, 0xd01f5c),
+        coin: lit(0xffd23d, 0xd8a01a, 2.6),
+        heart: lit(0xff5570, 0xd41f42, 2.4),
+        chest: lit(0xffd23d, 0xc98f10, 2.0)
       };
     }
   },

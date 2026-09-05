@@ -57,6 +57,13 @@
 
     <button id="playbtn" class="bigbtn">BONK!</button>
 
+    <div class="gfxrow" data-gfx>
+      <span class="gfx-label">GRAPHICS</span>
+      <span class="gfx-opt" data-q="low">LOW</span>
+      <span class="gfx-opt" data-q="medium">MED</span>
+      <span class="gfx-opt" data-q="high">ULTRA</span>
+    </div>
+
     <div class="controls">
       <b>WASD</b> move · <b>MOUSE</b> look · <b>SHIFT</b> dash · <b>SPACE</b> jump · <b>P</b> pause
       <br><span class="dim">Weapons fire on their own. Walk over gems. Don't die.</span>
@@ -76,6 +83,12 @@
   <div id="pause" class="overlay hidden">
     <div class="lu-title">PAUSED</div>
     <div id="statlist"></div>
+    <div class="gfxrow" data-gfx>
+      <span class="gfx-label">GRAPHICS</span>
+      <span class="gfx-opt" data-q="low">LOW</span>
+      <span class="gfx-opt" data-q="medium">MED</span>
+      <span class="gfx-opt" data-q="high">ULTRA</span>
+    </div>
     <button id="resumebtn" class="bigbtn small">RESUME</button>
     <button id="quitbtn" class="bigbtn small ghost">QUIT TO MENU</button>
   </div>
@@ -92,6 +105,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/util.js"></script>
+<script src="js/gfx.js"></script>
+<script src="js/postfx.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/world.js"></script>
 <script src="js/fx.js"></script>
