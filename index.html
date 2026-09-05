@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>MEGABONK — 3D Survivor Roguelike</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div id="xpwrap">
+        <div id="xpbar"><div id="xpfill"></div></div>
+        <div id="lvl">LV 1</div>
+      </div>
+      <div id="clock">00:00</div>
+      <div id="counters">
+        <span class="chip" id="c-kills">☠ 0</span>
+        <span class="chip gold" id="c-gold">◉ 0</span>
+        <span class="chip" id="c-wave">WAVE 1</span>
+      </div>
+    </div>
+
+    <div id="bottombar">
+      <div id="hpwrap">
+        <div id="hpbar"><div id="hpfill"></div><span id="hptext">100 / 100</span></div>
+      </div>
+      <div id="loadout"></div>
+      <div id="dashwrap"><div id="dashbar"><div id="dashfill"></div></div><span>DASH · SHIFT</span></div>
+    </div>
+
+    <div id="bosswrap" class="hidden">
+      <div id="bossname">BONKZILLA</div>
+      <div id="bossbar"><div id="bossfill"></div></div>
+    </div>
+
+    <div id="toasts"></div>
+    <div id="crosshair"></div>
+  </div>
+
+  <!-- ============ MENU ============ -->
+  <div id="menu" class="overlay">
+    <div class="logo">
+      <span class="l1">MEGA</span><span class="l2">BONK</span>
+      <div class="tagline">bonk things · get big · survive 20 minutes</div>
+    </div>
+
+    <div id="charpick">
+      <div class="pick-title">PICK YOUR BONKER</div>
+      <div id="chars"></div>
+    </div>
+
+    <button id="playbtn" class="bigbtn">BONK!</button>
+
+    <div class="controls">
+      <b>WASD</b> move · <b>MOUSE</b> look · <b>SHIFT</b> dash · <b>SPACE</b> jump · <b>P</b> pause
+      <br><span class="dim">Weapons fire on their own. Walk over gems. Don't die.</span>
+    </div>
+    <div class="best" id="bestline"></div>
+  </div>
+
+  <!-- ============ LEVEL UP ============ -->
+  <div id="levelup" class="overlay hidden">
+    <div class="lu-title">LEVEL <span id="lu-lvl">2</span></div>
+    <div class="lu-sub">CHOOSE YOUR BONK</div>
+    <div id="cards"></div>
+    <div class="lu-foot"><span id="rerollbtn" class="reroll">↻ REROLL (<span id="rerolls">1</span>)</span></div>
+  </div>
+
+  <!-- ============ PAUSE ============ -->
+  <div id="pause" class="overlay hidden">
+    <div class="lu-title">PAUSED</div>
+    <div id="statlist"></div>
+    <button id="resumebtn" class="bigbtn small">RESUME</button>
+    <button id="quitbtn" class="bigbtn small ghost">QUIT TO MENU</button>
+  </div>
+
+  <!-- ============ GAME OVER ============ -->
+  <div id="gameover" class="overlay hidden">
+    <div id="go-title">YOU GOT BONKED</div>
+    <div id="go-stats"></div>
+    <button id="againbtn" class="bigbtn">RUN IT BACK</button>
+  </div>
+
+  <div id="loading" class="overlay">LOADING BONKS…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/world.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/player.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/upgrades.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
