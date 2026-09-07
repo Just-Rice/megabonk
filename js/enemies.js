@@ -4,19 +4,19 @@
 'use strict';
 
 const ENEMY_TYPES = {
-  grunt:  { name: 'Bonkling',  hp: 12,  speed: 3.0, dmg: 6,  radius: 0.62, xp: 1, scale: 1.0, color: 0x9a5cff, weight: 100, minute: 0 },
-  runner: { name: 'Zoomling',  hp: 8,   speed: 5.4, dmg: 5,  radius: 0.5,  xp: 1, scale: 0.85, color: 0xff3d7f, weight: 55,  minute: 1 },
-  bat:    { name: 'Flapper',   hp: 10,  speed: 4.5, dmg: 6,  radius: 0.5,  xp: 2, scale: 0.8,  color: 0x3dd6ff, weight: 45,  minute: 2, fly: true },
-  tank:   { name: 'Chunker',   hp: 60,  speed: 2.0, dmg: 16, radius: 1.05, xp: 4, scale: 1.6,  color: 0x7c778f, weight: 30,  minute: 3 },
-  bomber: { name: 'Poppy',     hp: 22,  speed: 3.4, dmg: 10, radius: 0.75, xp: 3, scale: 1.1,  color: 0xff8a3d, weight: 26,  minute: 4, explodes: true },
-  shooter:{ name: 'Spitter',   hp: 26,  speed: 2.4, dmg: 9,  radius: 0.7,  xp: 3, scale: 1.0,  color: 0x63e08a, weight: 24,  minute: 5, ranged: true },
-  brute:  { name: 'Megachunk', hp: 140, speed: 2.6, dmg: 22, radius: 1.35, xp: 8, scale: 2.1,  color: 0xd93b3b, weight: 16,  minute: 7 }
+  grunt:  { name: 'Bonkling',  hp: 12,  speed: 3.0, dmg: 6,  radius: 0.62, xp: 1, scale: 1.0, color: 0x6b4f96, weight: 100, minute: 0 },
+  runner: { name: 'Zoomling',  hp: 8,   speed: 5.4, dmg: 5,  radius: 0.5,  xp: 1, scale: 0.85, color: 0xa63f61, weight: 55,  minute: 1 },
+  bat:    { name: 'Flapper',   hp: 10,  speed: 4.5, dmg: 6,  radius: 0.5,  xp: 2, scale: 0.8,  color: 0x4a8ba8, weight: 45,  minute: 2, fly: true },
+  tank:   { name: 'Chunker',   hp: 60,  speed: 2.0, dmg: 16, radius: 1.05, xp: 4, scale: 1.6,  color: 0x6a6672, weight: 30,  minute: 3 },
+  bomber: { name: 'Poppy',     hp: 22,  speed: 3.4, dmg: 10, radius: 0.75, xp: 3, scale: 1.1,  color: 0xb26a35, weight: 26,  minute: 4, explodes: true },
+  shooter:{ name: 'Spitter',   hp: 26,  speed: 2.4, dmg: 9,  radius: 0.7,  xp: 3, scale: 1.0,  color: 0x5c8f63, weight: 24,  minute: 5, ranged: true },
+  brute:  { name: 'Megachunk', hp: 140, speed: 2.6, dmg: 22, radius: 1.35, xp: 8, scale: 2.1,  color: 0x963434, weight: 16,  minute: 7 }
 };
 
 const BOSSES = [
-  { name: 'BONKZILLA',   color: 0x9a5cff, hp: 900,  speed: 2.7, dmg: 24, scale: 4.2 },
-  { name: 'THE CHONKER', color: 0xff8a3d, hp: 2400, speed: 2.4, dmg: 30, scale: 5.0 },
-  { name: 'MEGABONK',    color: 0xff3d7f, hp: 5200, speed: 3.0, dmg: 38, scale: 6.0 }
+  { name: 'BONKZILLA',   color: 0x7a4bc4, hp: 1000, speed: 2.75, dmg: 24, scale: 4.2 },
+  { name: 'THE CHONKER', color: 0xc06a2a, hp: 3400, speed: 2.8,  dmg: 36, scale: 5.0 },
+  { name: 'MEGABONK',    color: 0xb02f5c, hp: 8200, speed: 3.2,  dmg: 48, scale: 6.0 }
 ];
 
 const Enemies = {
@@ -55,7 +55,7 @@ const Enemies = {
   // ---------- meshes ----------
   _buildMesh(typeId, def) {
     const g = new THREE.Group();
-    const mat = (c) => GFX.lambert(c);
+    const mat = (c) => GFX.mat(c);
     const box = (w, h, d, c, x, y, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
       m.position.set(x, y, z); m.castShadow = true; return m;
@@ -64,7 +64,7 @@ const Enemies = {
     const dark = new THREE.Color(bodyColor).multiplyScalar(0.6).getHex();
 
     const body = box(1, 1, 0.9, bodyColor, 0, 0.75, 0);
-    const eyeMat = GFX.lambert(0xffffff, { emissive: 0x9a9a9a });
+    const eyeMat = GFX.mat(0xffffff, { emissive: 0x9a9a9a });
     const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), eyeMat);
     eyeL.position.set(-0.24, 0.92, 0.48);
     const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.1), eyeMat);
@@ -117,7 +117,7 @@ const Enemies = {
       g.add(crown, spikes); extras.push(crown, spikes);
     }
 
-    const blob = GFX.blob(0.72, 0.3);
+    const blob = GFX.blob(0.72, 0.2);
     blob.scale.setScalar(0.72);
     g.add(blob);
 
@@ -153,8 +153,9 @@ const Enemies = {
     const mesh = this._take(poolId, base);
 
     const t = Game.time;
-    const hpScale = 1 + t / 60 * 0.42 + Math.pow(t / 210, 2.1);
-    const dmgScale = 1 + t / 60 * 0.16;
+    const hpScale = 1 + t / 60 * 0.46 + Math.pow(t / 185, 2.85);
+    const dmgScale = 1 + t / 60 * 0.21;
+    const spdScale = 1 + t / 60 * 0.024;
 
     const elite = !!opts.elite;
     const scale = base.scale * (elite ? 1.4 : 1);
@@ -165,7 +166,7 @@ const Enemies = {
       vx: 0, vz: 0,
       hp: base.hp * hpScale * (elite ? 4 : 1) * (opts.hpMul || 1),
       maxHp: 0,
-      speed: base.speed * (elite ? 0.85 : 1) * U.rand(0.92, 1.08),
+      speed: base.speed * (elite ? 0.85 : 1) * U.rand(0.92, 1.08) * spdScale,
       dmg: base.dmg * dmgScale * (elite ? 1.5 : 1),
       radius: typeId === 'boss' ? base.scale * 0.55 : (base.radius || 0.7) * (elite ? 1.4 : 1),
       xp: base.xp * (elite ? 8 : 1),
@@ -180,6 +181,7 @@ const Enemies = {
       shootCd: U.rand(1.2, 2.6),
       hopT: Math.random() * 10,
       slow: 0,
+      swimT: 0,
       knock: 0,
       dead: false,
       spawnT: 0.35
@@ -225,11 +227,11 @@ const Enemies = {
     }
 
     // ---- trash ----
-    const rate = 0.6 + minute * 0.5 + Math.pow(minute, 1.8) * 0.09;   // spawns per second
-    const cap = Math.min(200, 35 + minute * 22);
+    const rate = 0.66 + minute * 0.6 + Math.pow(minute, 1.9) * 0.13;   // spawns per second
+    const cap = Math.min(280, 40 + minute * 27);
     this.spawnTimer += dt * rate;
 
-    this.eliteChance = U.clamp((minute - 2.5) * 0.012, 0, 0.09);
+    this.eliteChance = U.clamp((minute - 2.5) * 0.02, 0, 0.2);
 
     if (this.spawnTimer > 8) this.spawnTimer = 8;   // never bank a giant burst
     while (this.spawnTimer >= 1) {
@@ -239,7 +241,13 @@ const Enemies = {
       const avail = [];
       for (const id in ENEMY_TYPES) {
         const d = ENEMY_TYPES[id];
-        if (minute >= d.minute) avail.push({ id, weight: d.weight * (1 + minute * 0.05) });
+        if (minute < d.minute) continue;
+        let w = d.weight * (1 + minute * 0.05);
+        // the dangerous types crowd out the chaff as the run goes on
+        if (d.ranged) w *= 1 + minute * 0.11;
+        if (d.explodes) w *= 1 + minute * 0.09;
+        if (id === 'brute' || id === 'tank') w *= 1 + minute * 0.08;
+        avail.push({ id, weight: w });
       }
       const choice = U.weighted(avail);
       const p = World.ringPoint(Player.pos, 26, 40);
@@ -247,9 +255,9 @@ const Enemies = {
     }
 
     // ---- occasional pack of runners ----
-    if (t > 60 && U.chance(dt * 0.06)) {
+    if (t > 45 && U.chance(dt * 0.09)) {
       const center = World.ringPoint(Player.pos, 26, 34);
-      const n = U.randInt(5, 10);
+      const n = U.randInt(7, 14);
       for (let i = 0; i < n; i++) {
         const p = new THREE.Vector3(center.x + U.rand(-4, 4), 0, center.z + U.rand(-4, 4));
         World.confine(p, 6);
@@ -370,7 +378,7 @@ const Enemies = {
     Loot.dropXp(e.pos, e.xp);
     const luck = Player.stats.luck;
     if (U.chance(0.14 + luck * 0.02)) Loot.dropGold(e.pos, e.isBoss ? 60 : (e.elite ? 12 : 1 + Math.floor(Game.time / 90)));
-    if (U.chance(0.012 + luck * 0.004)) Loot.dropHeart(e.pos);
+    if (U.chance(0.008 + luck * 0.004)) Loot.dropHeart(e.pos);
     if (e.elite || e.isBoss || U.chance(0.004 + luck * 0.002)) Loot.dropChest(e.pos);
 
     if (e.isBoss) {
@@ -442,7 +450,10 @@ const Enemies = {
         }
       }
 
-      const spd = e.speed * (1 - e.slow * 0.55);
+      // non-flyers wade and swim like the player does
+      const swim = e.fly ? 0 : World.swimFactor(e.pos.x, e.pos.z);
+      e.swimT = U.damp(e.swimT || 0, swim, 0.0001, dt);
+      const spd = e.speed * (1 - e.slow * 0.55) * U.lerp(1, 0.5, e.swimT);
       const push = e.isBoss ? 0.4 : 2.6;
       let vx = sx * spd + ax * push * spd * 0.5;
       let vz = sz * spd + az * push * spd * 0.5;
@@ -456,6 +467,20 @@ const Enemies = {
       e.pos.z += vz * dt;
       World.confine(e.pos, 1);
 
+      // Bosses flatten scenery; everything else has to walk around it. On a
+      // block, step along the obstacle in whichever tangent direction points
+      // more towards the player, so the horde flows past trees instead of
+      // piling up behind them.
+      if (!e.isBoss && World.resolveCircle(e.pos, e.radius * 0.85, e.pos.y + 0.3)) {
+        const len = Math.hypot(World.push.x, World.push.z) || 1;
+        const tx = -World.push.z / len, tz = World.push.x / len;
+        const dir = (sx * tx + sz * tz) >= 0 ? 1 : -1;
+        e.pos.x += tx * dir * spd * dt * 0.95;
+        e.pos.z += tz * dir * spd * dt * 0.95;
+        World.resolveCircle(e.pos, e.radius * 0.85, e.pos.y + 0.3);
+        e.vx *= 0.35; e.vz *= 0.35;
+      }
+
       // ---- vertical ----
       const ground = World.heightAt(e.pos.x, e.pos.z);
       e.hopT += dt;
@@ -465,7 +490,8 @@ const Enemies = {
         if (w) { w[0].rotation.z = Math.sin(e.hopT * 22) * 0.8; w[1].rotation.z = -Math.sin(e.hopT * 22) * 0.8; }
       } else {
         const hop = Math.abs(Math.sin(e.hopT * (3 + e.speed * 0.4))) * (e.isBoss ? 0.22 : 0.18);
-        e.pos.y = ground + hop;
+        const surf = World.floatY(ground, e.swimT);
+        e.pos.y = surf + hop * (1 - e.swimT) + (e.swimT > 0.05 ? Math.sin(e.hopT * 2.2) * 0.12 * e.swimT : 0);
         const legs = e.mesh.userData.legs;
         if (legs) {
           const sw = Math.sin(e.hopT * (6 + e.speed)) * 0.7;
@@ -476,7 +502,7 @@ const Enemies = {
 
       const blob = e.mesh.userData.blob;
       if (blob) {
-        blob.visible = GFX.q.blobs;
+        blob.visible = GFX.q.blobs && e.swimT < 0.6;
         if (GFX.q.blobs) {
           // offsets are in the parent's local space, which is scaled by e.scale
           blob.position.y = (ground - e.pos.y) / e.scale + 0.05;
@@ -537,7 +563,7 @@ const Loot = {
         chest: new THREE.BoxGeometry(0.8, 0.6, 0.6)
       };
       const lit = (c, e, boost) => {
-        const m = GFX.lambert(c, { emissive: e });
+        const m = GFX.mat(c, { emissive: e });
         m.emissive.multiplyScalar(boost || 2.2);   // push past 1.0 so it blooms
         return m;
       };

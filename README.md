@@ -37,7 +37,8 @@ Weapons fire on their own and auto-aim at the nearest enemy. You only steer, dod
 
 ## The run
 
-- **20 minutes** to survive. Enemy health, damage and spawn rate all climb with the clock.
+- **20 minutes** to survive. Enemy health, damage, speed and spawn rate all climb with the clock,
+  with a cubic health term late so maxed weapons stop trivialising the horde.
 - **7 enemy types** — chasers, sprinters, flyers, armoured chunkers, exploding poppies, ranged spitters
   and megachunks — plus gold **elites** from about 2:30 onward.
 - **3 bosses** at 3:00 and every 3:30 after that: Bonkzilla, The Chonker, and Megabonk itself.
@@ -84,8 +85,16 @@ the whole horde, so a 200-enemy screen costs well under a millisecond of game lo
 
 ## Graphics
 
-The renderer runs a proper linear-light pipeline with a hand-written post chain — no three.js
-example files, so the whole game is still one CDN script plus this repo, and still opens from disk.
+The renderer runs a physically based, linear-light pipeline with a hand-written post chain — no
+three.js example files, so the whole game is still one CDN script plus this repo, and still opens
+from disk.
+
+- **PBR materials everywhere.** Everything in the world is `MeshStandardMaterial` lit by a
+  pre-filtered environment map, so surfaces respond to sky light and roughness instead of looking
+  like flat paint.
+- **Procedural surfaces.** There are no texture files: ground, bark and stone albedo maps are
+  generated once from value noise into canvases, with matching normal maps derived by a Sobel pass,
+  giving real surface relief under the moving sun.
 
 - **HDR scene buffer.** The scene renders into a half-float, 4× multisampled render target, so
   highlights can exceed 1.0 instead of clamping to white.
@@ -102,12 +111,40 @@ example files, so the whole game is still one CDN script plus this repo, and sti
   with rock breaking through wherever the ground gets steep.
 - **Wind.** Grass, reeds, flowers and tree canopies sway via an injected vertex-shader term, gusting
   on a second, slower wave.
-- **Extras.** A painted sunset sky with a blooming sun disc, distant mountain silhouettes, drifting
-  additive motes, glowing projectile trails, and soft ground blobs under every character.
+- **Sun shafts.** The bright pass is smeared radially from the sun's projected screen position — a
+  cheap stand-in for volumetrics that sells the low sun behind the treeline.
+- **Baked contact AO.** Real SSAO would need a depth prepass over the whole horde every frame, so
+  the darkening around every solid prop is baked into the terrain's vertex colours at build time
+  instead: no runtime cost, and it seats the scenery into the ground rather than letting it float.
+- **Extras.** Distant mountain silhouettes, drifting additive motes, glowing projectile trails,
+  per-instance colour variation so a thousand copies of a mesh don't read as a repeated stamp, and
+  soft ground blobs under every character.
 
 Quality is chosen automatically from what the GPU reports and steps itself down if the frame rate
 sags; **LOW / MED / ULTRA** are also selectable on the menu and pause screens. On low, bloom, MSAA
 and shadows switch off and the render scale drops.
+
+### Solid scenery
+
+Trees, boulders, crystals, logs and bushes are real obstacles for the player, the horde, and most
+shots. Because scenery is drawn with `InstancedMesh` there are no per-prop objects to raycast, so
+each solid prop registers an upright cylinder collider at build time into a uniform grid. Colliders
+are created in the same loop that places the visuals, so they always match what is on screen at any
+prop density.
+
+Colliders carry a height, which makes them behave the way they look: you can jump a knee-high
+boulder but not a pine, and bats fly over rocks while still weaving between trunks. Blocked movers
+slide along an obstacle instead of sticking, and the horde steps around trees toward whichever
+tangent points at you. Bosses are exempt — they flatten scenery. Shots stop at the first trunk,
+except the bonkerang, which turns for home. Mushrooms, grass, ferns and flowers stay walk-through:
+tripping on ankle-height scenery feels awful in a horde game.
+
+### Swimmable water
+
+The lake is deep enough to swim. Past about half a metre of depth you stop walking the bottom and
+float at the surface at roughly half speed, bobbing, trailing a wake, unable to jump properly out of
+deep water. Enemies do exactly the same thing, so the lake is a real tactical feature — a slow lane
+you can cross to buy space, or get caught in. Flyers ignore it entirely.
 
 ### Ground decals follow the terrain
 
@@ -121,6 +158,9 @@ use a cheaper version that aligns the disc with the local ground normal.
 ## Notes
 
 - Desktop only — there are no touch controls.
+- Local scripts and CSS are loaded with a version stamp (`?v=…`). Without it a returning player can
+  get a fresh `game.js` against a cached `postfx.js` and the game breaks on load; bump the stamp in
+  `index.html` whenever files change.
 - Terrain height comes from a value-noise field sampled analytically, so anything that needs to sit
   on the ground shares one `World.heightAt(x, z)` function with the rendered mesh.
 - Tested against three.js r128, whose UMD build works from `file://` without a module server.

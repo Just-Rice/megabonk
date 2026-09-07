@@ -33,11 +33,16 @@ const GFX = {
   setCol(target, hex) { target.setHex(hex).convertSRGBToLinear(); return target; },
 
   // ---- materials -----------------------------------------------------
-  lambert(hex, opts) {
-    const o = Object.assign({ flatShading: true }, opts || {});
+  // The default surface for everything in the world. Physically based, so it
+  // responds to the environment map rather than looking like flat paint.
+  mat(hex, opts) {
+    const o = Object.assign({}, opts || {});
     if (o.emissive !== undefined) o.emissive = this.col(o.emissive);
     o.color = this.col(hex);
-    return new THREE.MeshLambertMaterial(o);
+    if (o.roughness === undefined) o.roughness = 0.86;
+    if (o.metalness === undefined) o.metalness = 0.02;
+    if (o.flatShading === undefined) o.flatShading = true;
+    return new THREE.MeshStandardMaterial(o);
   },
 
   basic(hex, opts) {
@@ -50,6 +55,176 @@ const GFX = {
   glow(hex, intensity) {
     const c = this.col(hex).multiplyScalar(intensity === undefined ? 1.9 : intensity);
     return new THREE.MeshBasicMaterial({ color: c, fog: true });
+  },
+
+  // ---- procedural textures ------------------------------------------
+  // No external assets, so surface detail is generated once into canvases:
+  // a value-noise albedo plus a Sobel-derived normal map. This is what
+  // separates "flat coloured polygon" from "a material catching light".
+  _texCache: {},
+
+  _noiseCanvas(size, opts) {
+    const o = opts || {};
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const img = g.createImageData(size, size);
+    const d = img.data;
+    const scale = o.scale || 8;
+    const oct = o.octaves || 4;
+    const contrast = o.contrast === undefined ? 1 : o.contrast;
+    const streak = o.streak || 0;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        // sample tiling noise by wrapping the lattice at `scale`
+        let v = 0, amp = 1, freq = scale, norm = 0;
+        for (let k = 0; k < oct; k++) {
+          const fx = (x / size) * freq, fy = (y / size) * freq * (1 - streak) + (streak ? (y / size) * freq * 0.15 : 0);
+          v += U.noise2(fx, fy) * amp;
+          norm += amp; amp *= 0.5; freq *= 2;
+        }
+        v /= norm;
+        v = U.clamp(0.5 + (v - 0.5) * contrast, 0, 1);
+        const i = (y * size + x) * 4;
+        d[i] = d[i + 1] = d[i + 2] = Math.round(v * 255);
+        d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  },
+
+  // grayscale height canvas -> tangent-space normal map
+  _normalFrom(canvas, strength) {
+    const size = canvas.width;
+    const src = canvas.getContext('2d').getImageData(0, 0, size, size).data;
+    const out = document.createElement('canvas');
+    out.width = out.height = size;
+    const g = out.getContext('2d');
+    const img = g.createImageData(size, size);
+    const d = img.data;
+    const at = (x, y) => src[(((y + size) % size) * size + ((x + size) % size)) * 4] / 255;
+    const k = strength === undefined ? 2.4 : strength;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = (at(x + 1, y) - at(x - 1, y)) * k;
+        const dy = (at(x, y + 1) - at(x, y - 1)) * k;
+        let nx = -dx, ny = -dy, nz = 1;
+        const l = Math.hypot(nx, ny, nz);
+        nx /= l; ny /= l; nz /= l;
+        const i = (y * size + x) * 4;
+        d[i] = Math.round((nx * 0.5 + 0.5) * 255);
+        d[i + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+        d[i + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+        d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return out;
+  },
+
+  // returns { map, normalMap } ready to hang on a standard material
+  surface(name, opts) {
+    if (this._texCache[name]) return this._texCache[name];
+    const o = opts || {};
+    const size = o.size || 256;
+    const height = this._noiseCanvas(size, o);
+    const normalCanvas = this._normalFrom(height, o.bump);
+
+    // tint the height field into an albedo
+    const alb = document.createElement('canvas');
+    alb.width = alb.height = size;
+    const ag = alb.getContext('2d');
+    ag.drawImage(height, 0, 0);
+    const im = ag.getImageData(0, 0, size, size);
+    const dd = im.data;
+    const base = new THREE.Color(o.color || 0x888888);
+    const dark = new THREE.Color(o.dark !== undefined ? o.dark : 0x000000);
+    const amount = o.tintAmount === undefined ? 0.45 : o.tintAmount;
+    const tmp = new THREE.Color();
+    for (let i = 0; i < dd.length; i += 4) {
+      const v = dd[i] / 255;
+      tmp.copy(dark).lerp(base, 1 - amount + v * amount);
+      dd[i] = Math.round(tmp.r * 255);
+      dd[i + 1] = Math.round(tmp.g * 255);
+      dd[i + 2] = Math.round(tmp.b * 255);
+    }
+    ag.putImageData(im, 0, 0);
+
+    const map = new THREE.CanvasTexture(alb);
+    const normalMap = new THREE.CanvasTexture(normalCanvas);
+    for (const t of [map, normalMap]) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 4;
+    }
+    map.encoding = THREE.sRGBEncoding;
+    const res = { map, normalMap };
+    this._texCache[name] = res;
+    return res;
+  },
+
+  // ---- PBR ------------------------------------------------------------
+  env: null,
+
+  // Build an equirectangular sky and pre-filter it into an environment map so
+  // every standard material picks up real sky light and reflections.
+  buildEnvironment(renderer, scene) {
+    const w = 256, h = 128;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0.00, '#1a2340');
+    grd.addColorStop(0.34, '#4a5f84');
+    grd.addColorStop(0.52, '#93a3ba');
+    grd.addColorStop(0.62, '#d9b48c');
+    grd.addColorStop(0.72, '#c98d5e');
+    grd.addColorStop(1.00, '#3a3128');
+    g.fillStyle = grd; g.fillRect(0, 0, w, h);
+    // a warm bloom where the sun sits so reflections have a hot spot
+    const sg = g.createRadialGradient(w * 0.62, h * 0.6, 2, w * 0.62, h * 0.6, 44);
+    sg.addColorStop(0, 'rgba(255,236,200,1)');
+    sg.addColorStop(1, 'rgba(255,200,150,0)');
+    g.fillStyle = sg; g.fillRect(0, 0, w, h);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.encoding = THREE.sRGBEncoding;
+
+    try {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      const rt = pmrem.fromEquirectangular(tex);
+      this.env = rt.texture;
+      scene.environment = this.env;
+      pmrem.dispose();
+      tex.dispose();
+    } catch (e) {
+      this.env = null;      // no IBL available; materials still light fine
+    }
+    return this.env;
+  },
+
+  standard(hex, opts) {
+    const o = Object.assign({}, opts || {});
+    o.color = this.col(hex);
+    if (o.emissive !== undefined) o.emissive = this.col(o.emissive);
+    if (o.roughness === undefined) o.roughness = 0.92;
+    if (o.metalness === undefined) o.metalness = 0.0;
+    if (o.surface) {
+      const s = this.surface(o.surface, o.surfaceOpts);
+      o.map = s.map;
+      o.normalMap = s.normalMap;
+      o.normalScale = new THREE.Vector2(o.bumpScale || 1, o.bumpScale || 1);
+      delete o.surface; delete o.surfaceOpts; delete o.bumpScale;
+    }
+    if (o.repeat) {
+      const r = o.repeat;
+      if (o.map) { o.map = o.map.clone(); o.map.needsUpdate = true; o.map.repeat.set(r, r); o.map.wrapS = o.map.wrapT = THREE.RepeatWrapping; }
+      if (o.normalMap) { o.normalMap = o.normalMap.clone(); o.normalMap.needsUpdate = true; o.normalMap.repeat.set(r, r); o.normalMap.wrapS = o.normalMap.wrapT = THREE.RepeatWrapping; }
+      delete o.repeat;
+    }
+    return new THREE.MeshStandardMaterial(o);
   },
 
   // ---- wind ----------------------------------------------------------
@@ -184,7 +359,7 @@ const GFX = {
   blob(radius, opacity, hex) {
     const mesh = new THREE.Mesh(this.makeDisc(2, 22, 0), new THREE.MeshBasicMaterial({
       color: this.col(hex === undefined ? 0x000000 : hex),
-      map: this.ramp(), transparent: true, opacity: opacity === undefined ? 0.34 : opacity,
+      map: this.ramp(), transparent: true, opacity: opacity === undefined ? 0.24 : opacity,
       depthWrite: false, fog: true
     }));
     mesh.frustumCulled = false;

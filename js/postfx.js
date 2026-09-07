@@ -16,12 +16,15 @@ const PostFX = {
   rtScene: null,
   rtBrightA: null, rtBrightB: null,
   rtWideA: null, rtWideB: null,
+  rtRay: null,
 
   quadScene: null, quadCam: null, quad: null,
-  matBright: null, matBlur: null, matComposite: null,
+  matBright: null, matBlur: null, matComposite: null, matRays: null,
+  sun: new THREE.Vector2(0.5, 0.8),
+  sunVis: 0,
 
-  BLOOM_STRENGTH: 0.5,
-  EXPOSURE: 1.12,
+  BLOOM_STRENGTH: 0.3,
+  EXPOSURE: 1.05,
 
   _flash: 0,
 
@@ -47,7 +50,7 @@ const PostFX = {
       void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
     this.matBright = new THREE.ShaderMaterial({
-      uniforms: { tDiffuse: { value: null }, uThreshold: { value: 1.0 }, uKnee: { value: 0.6 } },
+      uniforms: { tDiffuse: { value: null }, uThreshold: { value: 1.15 }, uKnee: { value: 0.75 } },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tDiffuse; uniform float uThreshold; uniform float uKnee;
@@ -78,15 +81,46 @@ const PostFX = {
       depthTest: false, depthWrite: false
     });
 
+    // Radial sun shafts. Smearing the bright pass outward from the sun's
+    // screen position is a cheap stand-in for volumetrics and sells the
+    // low sun hanging over the treeline.
+    this.matRays = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        uSun: { value: this.sun },
+        uStrength: { value: 0 }
+      },
+      vertexShader: VERT,
+      fragmentShader: `
+        uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uStrength;
+        varying vec2 vUv;
+        const float STEPS = 22.0;
+        void main() {
+          vec2 delta = (vUv - uSun) * (1.0 / STEPS) * 0.85;
+          vec2 uv = vUv;
+          vec3 sum = vec3(0.0);
+          float w = 1.0;
+          for (float i = 0.0; i < STEPS; i++) {
+            uv -= delta;
+            sum += texture2D(tDiffuse, clamp(uv, 0.0, 1.0)).rgb * w;
+            w *= 0.93;
+          }
+          gl_FragColor = vec4(sum / STEPS * uStrength, 1.0);
+        }`,
+      depthTest: false, depthWrite: false
+    });
+
     this.matComposite = new THREE.ShaderMaterial({
       uniforms: {
         tScene: { value: null }, tBloom: { value: null }, tWide: { value: null },
+        tRays: { value: null }, uRayTint: { value: GFX.col(0xd8b48a) },
         uBloom: { value: this.BLOOM_STRENGTH }, uExposure: { value: this.EXPOSURE },
         uVignette: { value: 0.52 }, uFlash: { value: 0 }, uFlashColor: { value: new THREE.Color(1, 0.2, 0.3) }
       },
       vertexShader: VERT,
       fragmentShader: `
         uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tWide;
+        uniform sampler2D tRays; uniform vec3 uRayTint;
         uniform float uBloom; uniform float uExposure; uniform float uVignette;
         uniform float uFlash; uniform vec3 uFlashColor;
         varying vec2 vUv;
@@ -105,14 +139,15 @@ const PostFX = {
           vec3 col = texture2D(tScene, vUv).rgb;
           vec3 bloom = texture2D(tBloom, vUv).rgb + texture2D(tWide, vUv).rgb * 0.75;
           col += bloom * uBloom;
+          col += texture2D(tRays, vUv).rgb * uRayTint;
           col *= uExposure;
 
-          col = mix(col, col + uFlashColor * uFlash, min(uFlash, 1.0));
+          col = mix(col, col + uFlashColor * uFlash, min(uFlash, 0.7));
           col = aces(col);
 
           // gentle grade: lift the shadows a touch and push saturation
           float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-          col = mix(vec3(lum), col, 1.12);
+          col = mix(vec3(lum), col, 1.02);
           col = pow(col, vec3(0.98));
 
           float d = length((vUv - 0.5) * vec2(1.06, 1.0));
@@ -152,7 +187,7 @@ const PostFX = {
     const hw = Math.max(2, Math.floor(w / 2)), hh = Math.max(2, Math.floor(h / 2));
     const qw = Math.max(2, Math.floor(w / 4)), qh = Math.max(2, Math.floor(h / 4));
 
-    [this.rtScene, this.rtBrightA, this.rtBrightB, this.rtWideA, this.rtWideB]
+    [this.rtScene, this.rtBrightA, this.rtBrightB, this.rtWideA, this.rtWideB, this.rtRay]
       .forEach(rt => rt && rt.dispose());
 
     this.rtScene = this._makeRT(this.width, this.height, true);
@@ -160,16 +195,24 @@ const PostFX = {
     this.rtBrightB = this._makeRT(hw, hh, false);
     this.rtWideA = this._makeRT(qw, qh, false);
     this.rtWideB = this._makeRT(qw, qh, false);
-    [this.rtBrightA, this.rtBrightB, this.rtWideA, this.rtWideB].forEach(rt => { rt.depthBuffer = false; });
+    this.rtRay = this._makeRT(qw, qh, false);
+    [this.rtBrightA, this.rtBrightB, this.rtWideA, this.rtWideB, this.rtRay]
+      .forEach(rt => { rt.depthBuffer = false; });
+  },
+
+  // called every frame with the sun's projected screen position
+  setSun(u, v, visibility) {
+    this.sun.set(u, v);
+    this.sunVis = visibility;
   },
 
   flash(amount, hex) {
-    this._flash = Math.min(1.4, this._flash + amount);
+    this._flash = Math.min(0.62, this._flash + amount);
     if (hex !== undefined) this.matComposite.uniforms.uFlashColor.value.setHex(hex).convertSRGBToLinear();
   },
 
   update(dt) {
-    if (this._flash > 0) this._flash = Math.max(0, this._flash - dt * 3.2);
+    if (this._flash > 0) this._flash = Math.max(0, this._flash - dt * 4.0);
   },
 
   _blit(material, target) {
@@ -209,10 +252,15 @@ const PostFX = {
     // second, wider pass at quarter res gives the glow a soft falloff
     this._blurInto(this.rtBrightB.texture, this.rtWideA, this.rtWideB, qw, qh, 2.0);
 
+    this.matRays.uniforms.tDiffuse.value = this.rtWideB.texture;
+    this.matRays.uniforms.uStrength.value = this.sunVis * 0.75;
+    this._blit(this.matRays, this.rtRay);
+
     const u = this.matComposite.uniforms;
     u.tScene.value = this.rtScene.texture;
     u.tBloom.value = this.rtBrightB.texture;
     u.tWide.value = this.rtWideB.texture;
+    u.tRays.value = this.rtRay.texture;
     u.uFlash.value = this._flash;
 
     this.quad.material = this.matComposite;

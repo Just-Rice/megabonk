@@ -10,6 +10,7 @@ const World = {
   WATER: -3.4,
 
   LAKE: { x: -48, z: 40, r: 31 },
+  SUN_POS: new THREE.Vector3(320, 88, 200),   // low, in the sunset band, so shafts reach the frame
   HILL: { x: 52, z: -46, r: 34, h: 13 },
 
   group: null,
@@ -34,7 +35,7 @@ const World = {
     const ld = Math.hypot(x - this.LAKE.x, z - this.LAKE.z) / this.LAKE.r;
     if (ld < 1) {
       const t = 1 - ld, s = t * t * (3 - 2 * t);
-      h = U.lerp(h, this.WATER - 1.55 + (d - 0.5) * 1.1, s);
+      h = U.lerp(h, this.WATER - 3.7 + (d - 0.5) * 1.6, s);
     }
 
     const cd = Math.hypot(x, z);
@@ -55,6 +56,26 @@ const World = {
 
   slopeAt(x, z) { return 1 - this.normalAt(x, z, 0.7, this._slopeN).y; },
   _slopeN: new THREE.Vector3(),
+
+  // How deep the water is over a point, 0 on dry land. Everything that swims
+  // or wades reads this.
+  waterDepthAt(x, z) {
+    if (this.lakeAt(x, z) > 1.25) return 0;
+    const d = this.WATER - this.heightAt(x, z);
+    return d > 0 ? d : 0;
+  },
+
+  // 0 = walking, 1 = fully swimming. Blended so the shoreline transition is
+  // smooth instead of a step at the waterline.
+  swimFactor(x, z) {
+    return U.clamp((this.waterDepthAt(x, z) - 0.55) / 0.95, 0, 1);
+  },
+
+  // the height a swimmer's feet sit at, given the ground under them
+  floatY(ground, t) {
+    if (t <= 0) return ground;
+    return U.lerp(ground, Math.max(ground, this.WATER - 1.35), t);
+  },
   underwater(x, z) { return this.heightAt(x, z) < this.WATER && this.lakeAt(x, z) < 1.1; },
 
   // 0 at the middle of the lake, 1 at its rim, >1 outside it. Shoreline
@@ -85,13 +106,13 @@ const World = {
     c.width = 8; c.height = 512;
     const g = c.getContext('2d');
     const grd = g.createLinearGradient(0, 0, 0, 512);
-    grd.addColorStop(0.00, '#150c33');
-    grd.addColorStop(0.20, '#39216e');
-    grd.addColorStop(0.42, '#8244a4');
-    grd.addColorStop(0.60, '#e0637f');
-    grd.addColorStop(0.75, '#ff9a5c');
-    grd.addColorStop(0.88, '#ffcf8a');
-    grd.addColorStop(1.00, '#ffe9c4');
+    grd.addColorStop(0.00, '#0f1830');
+    grd.addColorStop(0.22, '#22304f');
+    grd.addColorStop(0.44, '#4c6285');
+    grd.addColorStop(0.60, '#8b9cb2');
+    grd.addColorStop(0.72, '#c9a988');
+    grd.addColorStop(0.84, '#d9a172');
+    grd.addColorStop(1.00, '#8d7358');
     g.fillStyle = grd;
     g.fillRect(0, 0, 8, 512);
 
@@ -109,11 +130,11 @@ const World = {
     this.sky = sky;
 
     // sun disc, deliberately far above 1.0 so the bloom pass blows it out
-    const sunPos = new THREE.Vector3(320, 168, 200);
+    const sunPos = this.SUN_POS;
     const sun = new THREE.Mesh(
-      new THREE.CircleGeometry(24, 32),
+      new THREE.CircleGeometry(30, 40),
       new THREE.MeshBasicMaterial({
-        color: GFX.col(0xfff2cc).multiplyScalar(4.2),
+        color: GFX.col(0xffeccc).multiplyScalar(2.6),
         fog: false, depthWrite: false, transparent: true
       })
     );
@@ -123,10 +144,10 @@ const World = {
     scene.add(sun);
 
     const halo = new THREE.Mesh(
-      new THREE.CircleGeometry(78, 32),
+      new THREE.CircleGeometry(96, 40),
       new THREE.MeshBasicMaterial({
-        color: GFX.col(0xff9a5c), fog: false, depthWrite: false,
-        transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending
+        color: GFX.col(0xd8a878), fog: false, depthWrite: false,
+        transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending
       })
     );
     halo.position.copy(sunPos);
@@ -134,7 +155,7 @@ const World = {
     halo.renderOrder = -98;
     scene.add(halo);
 
-    const cloudMat = GFX.lambert(0xffe0cc, { emissive: 0x502f52, fog: false });
+    const cloudMat = GFX.mat(0xb9bfc9, { emissive: 0x2a2f3d, fog: false, roughness: 1 });
     this.clouds = new THREE.Group();
     const n = Math.round(22 * GFX.q.propDensity) + 8;
     for (let i = 0; i < n; i++) {
@@ -162,14 +183,14 @@ const World = {
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
 
-    const cDeep  = GFX.col(0x1f5f56);   // lake bed
-    const cSand  = GFX.col(0xc9b077);   // shoreline
-    const cGrass = GFX.col(0x4aa84f);   // main sward
-    const cLush  = GFX.col(0x7ede63);   // sunlit tops
-    const cMoss  = GFX.col(0x2f7c56);   // damp hollows
-    const cDry   = GFX.col(0xb7c257);   // dry patches
-    const cRock  = GFX.col(0x7a7391);
-    const cPeak  = GFX.col(0xd2ccdd);
+    const cDeep  = GFX.col(0x3d4136);   // silty lake bed
+    const cSand  = GFX.col(0xa89772);   // shoreline
+    const cGrass = GFX.col(0x5f7439);   // main sward
+    const cLush  = GFX.col(0x7d9048);   // sunlit tops
+    const cMoss  = GFX.col(0x415436);   // damp hollows
+    const cDry   = GFX.col(0x8a8455);   // dry patches
+    const cRock  = GFX.col(0x6b6660);
+    const cPeak  = GFX.col(0x8e8880);
     const tmp = new THREE.Color(), rock = new THREE.Color();
 
     for (let i = 0; i < pos.count; i++) {
@@ -216,7 +237,14 @@ const World = {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
-    this.terrain = new THREE.Mesh(geo, GFX.lambert(0xffffff, { vertexColors: true }));
+    // smooth-shaded and textured: the vertex colours carry the biome and the
+    // baked AO, the noise map and its normals carry the surface itself
+    this.terrain = new THREE.Mesh(geo, GFX.standard(0xffffff, {
+      vertexColors: true, flatShading: false, roughness: 0.97, metalness: 0,
+      surface: 'ground', surfaceOpts: { size: 256, scale: 7, octaves: 5, contrast: 1.25,
+                                        color: 0xffffff, dark: 0xb8b8b8, tintAmount: 0.5, bump: 3.2 },
+      repeat: 42, bumpScale: 1.15
+    }));
     this.terrain.receiveShadow = GFX.q.shadows;
     this.group.add(this.terrain);
   },
@@ -243,9 +271,9 @@ const World = {
       fog: true,
       uniforms: Object.assign({
         uTime: { value: 0 },
-        uShallow: { value: GFX.col(0x5fd6c8) },
-        uDeep: { value: GFX.col(0x123c55) },
-        uFoam: { value: GFX.col(0xdffaff) },
+        uShallow: { value: GFX.col(0x4a6a63) },
+        uDeep: { value: GFX.col(0x101d24) },
+        uFoam: { value: GFX.col(0xc8d4d2) },
         uSunDir: { value: new THREE.Vector3(0.72, 0.42, 0.45).normalize() }
       }, THREE.UniformsLib.fog),
       vertexShader: `
@@ -288,12 +316,12 @@ const World = {
           float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
 
           vec3 col = mix(uShallow, uDeep, clamp(vDepth / 3.2, 0.0, 1.0));
-          col = mix(col, vec3(0.75, 0.55, 0.85), fres * 0.55);
+          col = mix(col, vec3(0.52, 0.60, 0.68), fres * 0.85);
 
           // sun glint — pushed past 1.0 on purpose so bloom catches it
           vec3 H = normalize(uSunDir + V);
           float spec = pow(max(dot(N, H), 0.0), 90.0);
-          col += vec3(2.6, 2.2, 1.7) * spec;
+          col += vec3(2.2, 1.85, 1.4) * spec;
 
           float shore = 1.0 - smoothstep(0.06, 0.55, vDepth);
           float ripple = 0.5 + 0.5 * sin(vWorld.x * 1.7 + vWorld.z * 1.3 - uTime * 2.4);
@@ -313,7 +341,7 @@ const World = {
 
   // ---- distant silhouette ---------------------------------------------
   _buildMountains() {
-    const mat = GFX.lambert(0x4a3a68, { emissive: 0x1d1330 });
+    const mat = GFX.mat(0x5b6273, { emissive: 0x161a26, roughness: 1 });
     const count = 46;
     const mesh = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 5), mat, count);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -335,7 +363,7 @@ const World = {
   },
 
   _buildBorder() {
-    const mat = GFX.lambert(0x453a5e);
+    const mat = GFX.mat(0x585f6e, { roughness: 1 });
     const count = 170;
     const mesh = new THREE.InstancedMesh(new THREE.ConeGeometry(7, 20, 5), mat, count);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -373,6 +401,20 @@ const World = {
       mesh.setMatrixAt(i, m);
     });
     mesh.instanceMatrix.needsUpdate = true;
+
+    // Per-instance tint. instanceColor multiplies the material colour, so
+    // these are variation factors around 1.0 — it stops a thousand copies of
+    // the same mesh reading as a repeated stamp.
+    if (opts.tint) {
+      const t = opts.tint, c = new THREE.Color();
+      for (let i = 0; i < placements.length; i++) {
+        const v = U.rand(1 - t, 1 + t);
+        c.setRGB(v * U.rand(0.94, 1.06), v, v * U.rand(0.94, 1.06));
+        mesh.setColorAt(i, c);
+      }
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+
     // r128 builds an InstancedMesh bounding sphere from the base geometry at
     // the group origin, so instances get culled unless we opt out
     mesh.frustumCulled = false;
@@ -386,9 +428,9 @@ const World = {
   _scatterProps() {
     const trunks = [], canopyA = [], canopyB = [], canopyC = [];
     const rocks = [], stems = [], caps = [], grass = [], flowers = [];
-    const crystals = [], reeds = [], logs = [];
+    const crystals = [], reeds = [], logs = [], bushes = [], ferns = [], pebbles = [];
 
-    const total = Math.round(1500 * GFX.q.propDensity);
+    const total = Math.round(2600 * GFX.q.propDensity);
     for (let i = 0; i < total; i++) {
       const a = Math.random() * U.TAU;
       const r = Math.sqrt(Math.random()) * (this.RADIUS - 3);
@@ -417,61 +459,145 @@ const World = {
       if (!steep && roll < 0.17) {
         // layered conifer
         const s = U.rand(0.75, 1.7);
+        // trunk blocks; the canopy above it does not, so shots still fly
+        // through foliage rather than stopping dead in a cloud of leaves
+        this.addCollider(x, z, 0.6 * s, 8 * s);
         trunks.push({ x, y: y + 2.1 * s, z, s: s * 0.5, sy: s * 2.6, ry });
         canopyA.push({ x, y: y + 4.5 * s, z, s: s * 2.5, sy: s * 2.6, ry });
         canopyB.push({ x, y: y + 6.1 * s, z, s: s * 1.85, sy: s * 2.3, ry });
         if (Math.random() < 0.6) canopyC.push({ x, y: y + 7.5 * s, z, s: s * 1.2, sy: s * 1.9, ry });
       } else if (roll < 0.30) {
-        rocks.push({ x, y: y + U.rand(0.05, 0.7), z, s: U.rand(0.55, 2.3), ry, rx: U.rand(0, 1), rz: U.rand(0, 1) });
+        const s = U.rand(0.55, 2.3), lift = U.rand(0.05, 0.7);
+        this.addCollider(x, z, 0.82 * s, lift + 0.9 * s);
+        rocks.push({ x, y: y + lift, z, s, ry, rx: U.rand(0, 1), rz: U.rand(0, 1) });
       } else if (!steep && roll < 0.38) {
         const s = U.rand(0.5, 1.25);
         stems.push({ x, y: y + 0.6 * s, z, s: s * 0.42, sy: s * 1.25, ry });
         caps.push({ x, y: y + 1.4 * s, z, s: s * 1.3, sy: s * 0.85, ry });
       } else if (roll < 0.44) {
-        crystals.push({ x, y: y + U.rand(0.5, 1.5), z, s: U.rand(0.3, 0.8), sy: U.rand(1.5, 3.6), ry, rx: U.rand(-0.18, 0.18) });
-      } else if (roll < 0.47) {
-        logs.push({ x, y: y + 0.35, z, s: U.rand(0.3, 0.5), sy: U.rand(2.2, 4.5), ry, rz: Math.PI / 2 });
-      } else if (roll < 0.60) {
+        const s = U.rand(0.3, 0.8), sy = U.rand(1.5, 3.6), lift = U.rand(0.5, 1.5);
+        this.addCollider(x, z, s * 0.9, lift + sy * 0.5);
+        crystals.push({ x, y: y + lift, z, s, sy, ry, rx: U.rand(-0.18, 0.18) });
+      } else if (roll < 0.505) {
+        // leafy bush: a couple of blobs, solid enough to walk around
+        const s = U.rand(0.55, 1.35);
+        this.addCollider(x, z, s * 0.72, s * 1.1);
+        bushes.push({ x, y: y + s * 0.55, z, s: s * 0.95, sy: s * 0.75, ry });
+        bushes.push({ x: x + U.rand(-0.4, 0.4) * s, y: y + s * 0.95, z: z + U.rand(-0.4, 0.4) * s,
+                      s: s * 0.65, sy: s * 0.55, ry: Math.random() * U.TAU });
+      } else if (roll < 0.545) {
+        const s = U.rand(0.4, 0.95);
+        for (let k = 0; k < 4; k++) {
+          ferns.push({ x: x + U.rand(-0.3, 0.3), y: y + s * 0.5, z: z + U.rand(-0.3, 0.3),
+                       s: s * 0.22, sy: s * U.rand(1.0, 1.5), ry: Math.random() * U.TAU,
+                       rx: U.rand(0.15, 0.45) });
+        }
+      } else if (roll < 0.585) {
+        pebbles.push({ x, y: y + 0.1, z, s: U.rand(0.12, 0.34), ry, rx: U.rand(0, 1), rz: U.rand(0, 1) });
+      } else if (roll < 0.615) {
+        const s = U.rand(0.3, 0.5), sy = U.rand(2.2, 4.5);
+        // a felled log is a capsule, so approximate it with three circles
+        // strung along its axis rather than one fat circle
+        const ax = -Math.cos(ry), az = Math.sin(ry);
+        for (let k = -1; k <= 1; k++) {
+          this.addCollider(x + ax * (sy * 0.33) * k, z + az * (sy * 0.33) * k, s * 1.15, s * 2.2);
+        }
+        logs.push({ x, y: y + 0.35, z, s, sy, ry, rz: Math.PI / 2 });
+      } else if (roll < 0.73) {
         flowers.push({ x, y: y + 0.45, z, s: U.rand(0.12, 0.24), sy: U.rand(0.7, 1.3), ry });
       } else {
         grass.push({ x, y: y + 0.35, z, s: U.rand(0.28, 0.7), sy: U.rand(0.9, 1.9), ry });
       }
     }
 
-    const trunkMat = GFX.lambert(0x6b4526);
-    const leafA = GFX.wind(GFX.lambert(0x2c7a45), 0.055);
-    const leafB = GFX.wind(GFX.lambert(0x1f6b58), 0.055);
-    const leafC = GFX.wind(GFX.lambert(0x49a86b), 0.055);
-    const rockMat = GFX.lambert(0x7d7791);
-    const stemMat = GFX.lambert(0xf2e4cc);
-    const capMat = GFX.lambert(0xe0417a, { emissive: 0x3a0a1c });
-    const crystalMat = GFX.lambert(0x63e0ff, { emissive: 0x2a86b0 });
-    const logMat = GFX.lambert(0x5c3a20);
-    const grassMat = GFX.wind(GFX.lambert(0x5fbe57), 0.16, 2.1);
-    const reedMat = GFX.wind(GFX.lambert(0x8fae4a), 0.2, 1.7);
+    const bark = { surface: 'bark', surfaceOpts: { size: 256, scale: 5, octaves: 4, contrast: 1.5,
+                     streak: 0.85, color: 0xffffff, dark: 0x6a6a6a, tintAmount: 0.75, bump: 3.6 },
+                   repeat: 3, bumpScale: 1.4 };
+    const stone = { surface: 'stone', surfaceOpts: { size: 256, scale: 6, octaves: 5, contrast: 1.35,
+                      color: 0xffffff, dark: 0x757575, tintAmount: 0.7, bump: 3.0 },
+                    repeat: 1.6, bumpScale: 1.25 };
+
+    const trunkMat = GFX.standard(0x4e3b2a, Object.assign({ roughness: 0.98, flatShading: false }, bark));
+    const leafA = GFX.wind(GFX.standard(0x3f5230, { roughness: 0.95 }), 0.055);
+    const leafB = GFX.wind(GFX.standard(0x35462b, { roughness: 0.95 }), 0.055);
+    const leafC = GFX.wind(GFX.standard(0x4b5c34, { roughness: 0.95 }), 0.055);
+    const rockMat = GFX.standard(0x6e6a63, Object.assign({ roughness: 0.95, flatShading: false }, stone));
+    const stemMat = GFX.standard(0xd6cbb4, { roughness: 0.9 });
+    const capMat = GFX.standard(0x9c4b3c, { roughness: 0.8 });
+    const crystalMat = GFX.standard(0x7fa8b8, { emissive: 0x1d3d4a, roughness: 0.25, metalness: 0.15 });
+    const logMat = GFX.standard(0x4a3826, Object.assign({ roughness: 0.98, flatShading: false }, bark));
+    const grassMat = GFX.wind(GFX.standard(0x62703c, { roughness: 1 }), 0.16, 2.1);
+    const reedMat = GFX.wind(GFX.standard(0x77794a, { roughness: 1 }), 0.2, 1.7);
     const flowerMats = [
-      GFX.wind(GFX.lambert(0xffd23d, { emissive: 0x4a3200 }), 0.2, 2.3),
-      GFX.wind(GFX.lambert(0xff6bb0, { emissive: 0x4a0a2a }), 0.2, 2.3),
-      GFX.wind(GFX.lambert(0xa77bff, { emissive: 0x2a0a4a }), 0.2, 2.3)
+      GFX.wind(GFX.standard(0xc9b24f, { roughness: 0.9 }), 0.2, 2.3),
+      GFX.wind(GFX.standard(0xb06a7e, { roughness: 0.9 }), 0.2, 2.3),
+      GFX.wind(GFX.standard(0x8a7fb0, { roughness: 0.9 }), 0.2, 2.3)
     ];
 
-    this._addInstanced(new THREE.CylinderGeometry(1, 1.3, 1, 6), trunkMat, trunks);
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 7), leafA, canopyA);
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 7), leafB, canopyB);
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 6), leafC, canopyC);
-    this._addInstanced(new THREE.DodecahedronGeometry(1, 0), rockMat, rocks);
-    this._addInstanced(new THREE.CylinderGeometry(1, 1, 1, 6), stemMat, stems);
-    this._addInstanced(new THREE.SphereGeometry(1, 9, 5, 0, U.TAU, 0, Math.PI / 2), capMat, caps);
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 5), crystalMat, crystals);
-    this._addInstanced(new THREE.CylinderGeometry(1, 1, 1, 6), logMat, logs);
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 4), grassMat, grass, { cast: false });
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 4), reedMat, reeds, { cast: false });
+    const bushMat = GFX.wind(GFX.standard(0x3a4a2c, { roughness: 0.97 }), 0.05, 1.6);
+    const fernMat = GFX.wind(GFX.standard(0x4a5c33, { roughness: 0.97 }), 0.13, 2.0);
+
+    this._addInstanced(new THREE.CylinderGeometry(1, 1.3, 1, 8), trunkMat, trunks, { tint: 0.16 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafA, canopyA, { tint: 0.15 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafB, canopyB, { tint: 0.15 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 7), leafC, canopyC, { tint: 0.15 });
+    this._addInstanced(new THREE.DodecahedronGeometry(1, 1), rockMat, rocks, { tint: 0.18 });
+    this._addInstanced(new THREE.CylinderGeometry(1, 1, 1, 7), stemMat, stems, { tint: 0.1 });
+    this._addInstanced(new THREE.SphereGeometry(1, 11, 6, 0, U.TAU, 0, Math.PI / 2), capMat, caps, { tint: 0.14 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 5), crystalMat, crystals, { tint: 0.2 });
+    this._addInstanced(new THREE.CylinderGeometry(1, 1, 1, 7), logMat, logs, { tint: 0.14 });
+    this._addInstanced(new THREE.IcosahedronGeometry(1, 0), bushMat, bushes, { tint: 0.18 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 4), fernMat, ferns, { cast: false, tint: 0.2 });
+    this._addInstanced(new THREE.DodecahedronGeometry(1, 0), rockMat, pebbles, { cast: false, tint: 0.22 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 4), grassMat, grass, { cast: false, tint: 0.22 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 4), reedMat, reeds, { cast: false, tint: 0.2 });
 
     // flowers get split across three colours
     const buckets = [[], [], []];
     flowers.forEach((f, i) => buckets[i % 3].push(f));
     const petal = new THREE.IcosahedronGeometry(1, 0);
-    buckets.forEach((b, i) => this._addInstanced(petal, flowerMats[i], b, { cast: false }));
+    buckets.forEach((b, i) => this._addInstanced(petal, flowerMats[i], b, { cast: false, tint: 0.15 }));
+
+    // mushrooms, grass, flowers and reeds are deliberately walk-through:
+    // tripping on ankle-height scenery feels awful in a horde game
+    this.indexColliders();
+    this._bakePropAO();
+  },
+
+  // Darken the ground around every solid prop. Real SSAO would need a depth
+  // prepass over the whole horde every frame; baking it into the terrain's
+  // vertex colours costs nothing at runtime and does most of the work of
+  // seating the scenery into the ground instead of letting it float.
+  _bakePropAO() {
+    const geo = this.terrain.geometry;
+    const p = geo.attributes.position.array;
+    const col = geo.attributes.color;
+    const c = col.array;
+    const CELL = this.COLL_CELL;
+
+    for (let i = 0, v = 0; i < p.length; i += 3, v += 3) {
+      const x = p[i], z = p[i + 2];
+      let ao = 1;
+      const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+      for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gz = cz - 1; gz <= cz + 1; gz++) {
+          const cell = this._cgrid.get(gx + ',' + gz);
+          if (!cell) continue;
+          for (let k = 0; k < cell.length; k++) {
+            const o = cell[k];
+            const reach = o.r + 2.3;
+            const dx = x - o.x, dz = z - o.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 > reach * reach) continue;
+            const t = 1 - Math.sqrt(d2) / reach;
+            ao -= t * t * 0.5;
+          }
+        }
+      }
+      if (ao < 0.4) ao = 0.4;
+      c[v] *= ao; c[v + 1] *= ao; c[v + 2] *= ao;
+    }
+    col.needsUpdate = true;
   },
 
   // ---- drifting motes -------------------------------------------------
@@ -541,6 +667,108 @@ const World = {
     this.group.add(this.motes);
   },
 
+  // ---- static prop collision -------------------------------------------
+  // Scenery is drawn with InstancedMesh, so there are no per-prop objects to
+  // raycast against. Instead each solid prop registers an upright cylinder
+  // here at build time, indexed into a uniform grid for cheap lookups.
+  COLL_CELL: 8,
+  colliders: [],
+  _cgrid: new Map(),
+  _stamp: 0,
+  push: { x: 0, z: 0 },
+
+  addCollider(x, z, r, h) {
+    this.colliders.push({ x, z, r, top: this.heightAt(x, z) + h, _seen: 0 });
+  },
+
+  indexColliders() {
+    this._cgrid.clear();
+    const c = this.COLL_CELL;
+    for (let i = 0; i < this.colliders.length; i++) {
+      const col = this.colliders[i];
+      const x0 = Math.floor((col.x - col.r) / c), x1 = Math.floor((col.x + col.r) / c);
+      const z0 = Math.floor((col.z - col.r) / c), z1 = Math.floor((col.z + col.r) / c);
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let cz = z0; cz <= z1; cz++) {
+          const k = cx + ',' + cz;
+          let cell = this._cgrid.get(k);
+          if (!cell) this._cgrid.set(k, cell = []);
+          cell.push(col);
+        }
+      }
+    }
+  },
+
+  // Push a circle out of every prop it overlaps. `y` is the world height of
+  // the mover: anything above a prop's top passes over it, so you can jump a
+  // boulder and bats can fly over rocks but not through trunks.
+  // Leaves the accumulated push in World.push so callers can kill the
+  // velocity component heading into the obstacle.
+  resolveCircle(pos, radius, y) {
+    const stamp = ++this._stamp;
+    const c = this.COLL_CELL;
+    const x0 = Math.floor((pos.x - radius) / c), x1 = Math.floor((pos.x + radius) / c);
+    const z0 = Math.floor((pos.z - radius) / c), z1 = Math.floor((pos.z + radius) / c);
+    let hit = false;
+    this.push.x = 0; this.push.z = 0;
+
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cz = z0; cz <= z1; cz++) {
+        const cell = this._cgrid.get(cx + ',' + cz);
+        if (!cell) continue;
+        for (let i = 0; i < cell.length; i++) {
+          const col = cell[i];
+          if (col._seen === stamp) continue;        // a prop can sit in several cells
+          col._seen = stamp;
+          if (y !== undefined && y > col.top) continue;
+          const dx = pos.x - col.x, dz = pos.z - col.z;
+          const min = col.r + radius;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= min * min) continue;
+          let d = Math.sqrt(d2), nx, nz;
+          if (d < 1e-4) { nx = 1; nz = 0; d = 0; } else { nx = dx / d; nz = dz / d; }
+          const out = min - d;
+          pos.x += nx * out; pos.z += nz * out;
+          this.push.x += nx * out; this.push.z += nz * out;
+          hit = true;
+        }
+      }
+    }
+    return hit;
+  },
+
+  // does a point (a projectile, a spawn candidate) sit inside a solid prop?
+  blocked(x, y, z, radius) {
+    radius = radius || 0;
+    const c = this.COLL_CELL;
+    const x0 = Math.floor((x - radius) / c), x1 = Math.floor((x + radius) / c);
+    const z0 = Math.floor((z - radius) / c), z1 = Math.floor((z + radius) / c);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cz = z0; cz <= z1; cz++) {
+        const cell = this._cgrid.get(cx + ',' + cz);
+        if (!cell) continue;
+        for (let i = 0; i < cell.length; i++) {
+          const col = cell[i];
+          if (y !== undefined && y > col.top) continue;
+          const dx = x - col.x, dz = z - col.z;
+          const min = col.r + radius;
+          if (dx * dx + dz * dz < min * min) return true;
+        }
+      }
+    }
+    return false;
+  },
+
+  // slide `vel` along an obstacle instead of stopping dead against it
+  slide(vel) {
+    const px = this.push.x, pz = this.push.z;
+    const len = Math.hypot(px, pz);
+    if (len < 1e-5) return;
+    const nx = px / len, nz = pz / len;
+    const into = vel.x * nx + vel.z * nz;
+    if (into < 0) { vel.x -= nx * into; vel.z -= nz * into; }
+  },
+
   confine(v, pad) {
     pad = pad || 0;
     const lim = this.RADIUS - pad;
@@ -556,11 +784,13 @@ const World = {
 
   ringPoint(center, minR, maxR, out) {
     out = out || new THREE.Vector3();
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 14; i++) {
       const a = Math.random() * U.TAU;
       const r = U.rand(minR, maxR);
       out.set(center.x + Math.cos(a) * r, 0, center.z + Math.sin(a) * r);
-      if (out.x * out.x + out.z * out.z < (this.RADIUS - 6) * (this.RADIUS - 6)) break;
+      const inside = out.x * out.x + out.z * out.z < (this.RADIUS - 6) * (this.RADIUS - 6);
+      // don't drop anything inside a tree; the last try is taken regardless
+      if (inside && !this.blocked(out.x, this.heightAt(out.x, out.z) + 0.6, out.z, 0.7)) break;
     }
     this.confine(out, 6);
     out.y = this.heightAt(out.x, out.z);

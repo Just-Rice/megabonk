@@ -203,11 +203,11 @@ const Weapons = {
     // sweep visual
     const mesh = this._meshFor('swing', () => {
       const g = new THREE.Group();
-      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.7, 6), GFX.lambert(0x8a5a2f));
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.7, 6), GFX.mat(0x8a5a2f));
       handle.position.y = 0.85;
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.7, 0.7), GFX.lambert(0xc8ccd8));
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.7, 0.7), GFX.mat(0xc8ccd8));
       head.position.y = 1.85;
-      const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.16, 0.75), GFX.lambert(0xffd23d, { emissive: 0x6b4a00 }));
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.16, 0.75), GFX.mat(0xffd23d, { emissive: 0x6b4a00 }));
       band.position.y = 1.85;
       g.add(handle, head, band);
       g.castShadow = true;
@@ -254,7 +254,7 @@ const Weapons = {
       const mesh = this._meshFor('shuriken', () => {
         const g = new THREE.Mesh(
           new THREE.BoxGeometry(0.7, 0.09, 0.16),
-          GFX.lambert(0xe8e8f0, { emissive: 0x7a8aa0 })
+          GFX.mat(0xe8e8f0, { emissive: 0x7a8aa0 })
         );
         const cross = new THREE.Mesh(g.geometry, g.material);
         cross.rotation.y = Math.PI / 2;
@@ -323,7 +323,7 @@ const Weapons = {
       const t = Enemies.randomNear(Player.pos.x, Player.pos.z, 18);
       const dest = t ? t.pos : World.ringPoint(Player.pos, 5, 12);
       const mesh = this._meshFor('bomb', () => new THREE.Mesh(
-        new THREE.SphereGeometry(0.4, 9, 7), GFX.lambert(0x222028, { emissive: 0x3a1200 })
+        new THREE.SphereGeometry(0.4, 9, 7), GFX.mat(0x222028, { emissive: 0x3a1200 })
       ));
       mesh.position.set(Player.pos.x, Player.pos.y + 1.4, Player.pos.z);
 
@@ -355,7 +355,7 @@ const Weapons = {
       const a = base + (i - (n - 1) / 2) * 0.5;
       const mesh = this._meshFor('rang', () => {
         const g = new THREE.Group();
-        const mat = GFX.lambert(0xffd23d, { emissive: 0x8a5f00 });
+        const mat = GFX.mat(0xffd23d, { emissive: 0x8a5f00 });
         const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.24), mat);
         const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 0.24), mat);
         b1.position.set(0.3, 0, 0.3); b1.rotation.y = 0.7;
@@ -389,7 +389,7 @@ const Weapons = {
     for (let i = 0; i < n; i++) {
       const mesh = new THREE.Mesh(
         new THREE.IcosahedronGeometry(0.48, 0),
-        GFX.lambert(0x3dd6ff, { emissive: 0x2fa8d8 })
+        GFX.mat(0x3dd6ff, { emissive: 0x2fa8d8 })
       );
       mesh.material.emissive.multiplyScalar(2.1);
       mesh.castShadow = true;
@@ -533,10 +533,25 @@ const Weapons = {
         }
       }
 
+      // scenery stops shots. A bonkerang turns for home instead of dying,
+      // and a bomb detonates against whatever it hit.
+      let hitProp = false;
+      if (World.blocked(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, p.radius * 0.4)) {
+        if (p.boomerang && p.boomerang.out) {
+          p.boomerang.out = false;
+          p.hit.clear();
+          FX.burst(p.mesh.position, 0xd8c9a8, 4, { speed: 4, size: 0.14, life: 0.3 });
+        } else if (!p.boomerang) {
+          hitProp = true;
+          FX.burst(p.mesh.position, 0xd8c9a8, 5, { speed: 5, size: 0.16, life: 0.35 });
+          SFX.hit();
+        }
+      }
+
       const ground = World.heightAt(p.mesh.position.x, p.mesh.position.z);
       const hitGround = p.gravity && p.mesh.position.y <= ground + 0.3;
 
-      if (p.life <= 0 || hitGround || Math.hypot(p.mesh.position.x, p.mesh.position.z) > World.RADIUS + 12) {
+      if (p.life <= 0 || hitGround || hitProp || Math.hypot(p.mesh.position.x, p.mesh.position.z) > World.RADIUS + 12) {
         if (p.onExpire) p.onExpire(p);
         this._release(p);
         U.swapRemove(this.projectiles, i);
@@ -556,7 +571,9 @@ const Weapons = {
       const hitPlayer = dx * dx + dy * dy + dz * dz < 1.4;
 
       const ground = World.heightAt(p.mesh.position.x, p.mesh.position.z);
-      if (hitPlayer || p.life <= 0 || p.mesh.position.y < ground) {
+      const blocked = World.blocked(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, 0.15);
+      if (hitPlayer || blocked || p.life <= 0 || p.mesh.position.y < ground) {
+        if (blocked && !hitPlayer) FX.burst(p.mesh.position, 0x8dff6b, 4, { speed: 4, size: 0.16, life: 0.3 });
         if (hitPlayer) {
           Player.damage(p.dmg, p.mesh.position);
           FX.burst(p.mesh.position, 0x8dff6b, 6, { speed: 6, size: 0.2, life: 0.35 });

@@ -25,6 +25,7 @@ const Game = {
   camDist: 15,
   camPos: new THREE.Vector3(),
   camLook: new THREE.Vector3(),
+  _sunNdc: new THREE.Vector3(),
 
   input: { up: 0, down: 0, left: 0, right: 0, dash: false, jump: false },
   keys: {},
@@ -57,23 +58,29 @@ const Game = {
     }
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(GFX.col(0xe08a7a), 105, 300);
+    this.scene.fog = new THREE.FogExp2(GFX.col(0x9aa3b0), 0.0058);
+    // pre-filtered sky lighting: every PBR material picks up real ambient
+    GFX.buildEnvironment(this.renderer, this.scene);
 
     this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.5, 700);
     this.camera.position.set(0, 16, 18);
 
     // ---- lights ----
-    const hemi = new THREE.HemisphereLight(GFX.col(0xffd9bc), GFX.col(0x3a5750), 0.62);
+    // the environment map now carries most of the ambient, so the hemisphere
+    // light is only a gentle fill
+    const hemi = new THREE.HemisphereLight(GFX.col(0xbcc9dd), GFX.col(0x4a5040), 0.52);
     this.scene.add(hemi);
 
     // warm key from the direction of the painted sun
-    const sun = new THREE.DirectionalLight(GFX.col(0xfff0cc), 1.85);
+    const sun = new THREE.DirectionalLight(GFX.col(0xffd9a8), 2.6);
     sun.position.set(48, 62, 30);
     sun.castShadow = GFX.q.shadows;
     sun.shadow.mapSize.set(GFX.q.shadowSize, GFX.q.shadowSize);
     const sc = sun.shadow.camera;
     sc.near = 1; sc.far = 200;
-    sc.left = -40; sc.right = 40; sc.top = 40; sc.bottom = -40;
+    // a tighter box over the same map spends every texel near the player,
+    // which is where the shadows are actually looked at
+    sc.left = -26; sc.right = 26; sc.top = 26; sc.bottom = -26;
     sc.updateProjectionMatrix();
     sun.shadow.bias = -0.0008;
     sun.shadow.normalBias = 0.045;
@@ -83,14 +90,9 @@ const Game = {
     this.sun = sun;
 
     // cool bounce from the opposite side keeps shadowed faces from going flat
-    const rim = new THREE.DirectionalLight(GFX.col(0x8a6bff), 0.55);
+    const rim = new THREE.DirectionalLight(GFX.col(0x7f95c4), 0.3);
     rim.position.set(-50, 26, -34);
     this.scene.add(rim);
-
-    // low magenta kicker along the horizon
-    const kick = new THREE.DirectionalLight(GFX.col(0xff5c8a), 0.28);
-    kick.position.set(-10, 6, 60);
-    this.scene.add(kick);
 
     // ---- systems ----
     World.build(this.scene);
@@ -99,6 +101,10 @@ const Game = {
     Enemies.init(this.scene);
     Weapons.init(this.scene);
     UI.init();
+
+    // compile the world's shader programs up front; otherwise the first
+    // frame stalls for tens of milliseconds building them
+    this.renderer.compile(this.scene, this.camera);
 
     this._bindEvents();
 
@@ -327,9 +333,10 @@ const Game = {
       p.y + this.camDist * sp + 1.5,
       p.z + Math.cos(this.camYaw) * this.camDist * cp
     );
-    // keep the camera above the terrain
+    // keep the camera above the terrain, and out of tree trunks
     const minY = World.heightAt(want.x, want.z) + 2.2;
     if (want.y < minY) want.y = minY;
+    World.resolveCircle(want, 0.7, want.y);
 
     this.camPos.x = U.damp(this.camPos.x, want.x, 0.0006, dt);
     this.camPos.y = U.damp(this.camPos.y, want.y, 0.0006, dt);
@@ -344,9 +351,20 @@ const Game = {
     this.camera.lookAt(this.camLook);
 
     // sun + shadow box follow the player
-    this.sun.position.set(p.x + 40, p.y + 70, p.z + 25);
+    this.sun.position.set(p.x + 32, p.y + 46, p.z + 20);
     this.sun.target.position.set(p.x, p.y, p.z);
     this.sun.target.updateMatrixWorld();
+
+    // project the painted sun into screen space to aim the light shafts
+    this._sunNdc.copy(World.SUN_POS).project(this.camera);
+    const u = this._sunNdc.x * 0.5 + 0.5, v = this._sunNdc.y * 0.5 + 0.5;
+    let vis = 0;
+    if (this._sunNdc.z < 1) {
+      // fade out as it leaves the frame instead of popping
+      const edge = Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5));
+      vis = U.clamp(1.5 - edge * 1.9, 0, 1);
+    }
+    PostFX.setSun(u, v, U.damp(PostFX.sunVis, vis, 0.02, dt));
   },
 
   _menuCamera(dt) {

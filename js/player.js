@@ -55,6 +55,9 @@ const Player = {
 
   onGround: true,
   jumpVel: 0,
+  swimT: 0,
+  _wasSwimming: false,
+  _splashT: 0,
   dashTime: 0,
   dashCdLeft: 0,
   dashStock: 1,
@@ -133,7 +136,7 @@ const Player = {
   _buildMesh(c) {
     const g = new THREE.Group();
     const mk = (w, h, d, color, x, y, z) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), GFX.lambert(color));
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), GFX.mat(color));
       m.position.set(x, y, z);
       m.castShadow = true;
       return m;
@@ -173,10 +176,10 @@ const Player = {
     if (!this.alive || this.invuln > 0 || this.dashTime > 0) return false;
     const reduced = Math.max(1, amount - this.stats.armor);
     this.hp -= reduced;
-    this.invuln = 0.7;
+    this.invuln = 0.68;
     this.hurtFlash = 0.35;
     FX.kick(0.5);
-    PostFX.flash(0.5, 0xff2d4a);
+    PostFX.flash(0.26, 0xff2d4a);
     FX.damage(this.pos, reduced, { color: '#ff5570' });
     SFX.ouch();
 
@@ -273,8 +276,23 @@ const Player = {
       input.dash = false;
     }
 
+    // ---- water ----
+    // Deep water is swimmable: you float at the surface and move at about
+    // half speed, so the lake is a real tactical hazard rather than scenery.
+    const swim = World.swimFactor(this.pos.x, this.pos.z);
+    this.swimT = U.damp(this.swimT, swim, 0.0001, dt);
+    if (swim > 0.5 && !this._wasSwimming) {
+      this._wasSwimming = true;
+      FX.burst(this.pos, 0x9fe8ff, 14, { speed: 7, size: 0.22, life: 0.5, additive: true, glow: 1.6 });
+      FX.ring(this.pos, 0x9fe8ff, 0.6, 4, 0.5);
+      SFX.noise(0.22, 0.2, 1400);
+    } else if (swim < 0.2) {
+      this._wasSwimming = false;
+    }
+
     // ---- horizontal movement ----
-    const speed = st.moveSpeed * (this.dashTime > 0 ? 4.2 : 1);
+    const waterDrag = U.lerp(1, 0.48, this.swimT);
+    const speed = st.moveSpeed * (this.dashTime > 0 ? 4.2 : 1) * waterDrag;
     const accel = this.onGround ? 42 : 18;
     const target = this.dashTime > 0
       ? this.aim.clone().multiplyScalar(speed)
@@ -287,12 +305,20 @@ const Player = {
     this.pos.z += this.vel.z * dt;
     if (World.confine(this.pos, 2)) { this.vel.x *= 0.2; this.vel.z *= 0.2; }
 
+    // trees, boulders, crystals and logs are solid; slide along them rather
+    // than stopping dead, and note that jumping clears the shorter ones
+    if (World.resolveCircle(this.pos, this.radius, this.pos.y + 0.25)) {
+      World.slide(this.vel);
+      if (this.dashTime > 0) this.dashTime = 0;      // a dash ends on impact
+    }
+
     // ---- jump / gravity (terrain following) ----
-    const ground = World.heightAt(this.pos.x, this.pos.z);
+    const terrain = World.heightAt(this.pos.x, this.pos.z);
+    const ground = World.floatY(terrain, this.swimT);
     if (input.jump && this.onGround) {
-      this.jumpVel = 11.5;
+      this.jumpVel = this.swimT > 0.4 ? 5.5 : 11.5;   // you cannot leap out of deep water
       this.onGround = false;
-      SFX.tone(420, 0.09, 'square', 0.12, 700);
+      SFX.tone(this.swimT > 0.4 ? 300 : 420, 0.09, 'square', 0.12, 700);
     }
     input.jump = false;
 
@@ -307,8 +333,18 @@ const Player = {
       }
     } else {
       // the height field is continuous, so snapping is stable and keeps the
-      // feet planted on slopes
-      this.pos.y = ground;
+      // feet planted on slopes; swimmers bob on the surface instead
+      this.pos.y = ground + (this.swimT > 0.05 ? Math.sin(this.bobT * 1.7) * 0.13 * this.swimT : 0);
+    }
+
+    // wake trail while moving through water
+    if (this.swimT > 0.25) {
+      this._splashT -= dt;
+      const moveSpeed = Math.hypot(this.vel.x, this.vel.z);
+      if (this._splashT <= 0 && moveSpeed > 1.5) {
+        this._splashT = 0.09;
+        FX.trail(this.pos, 0xbdf0ff, 0.3, 0.4);
+      }
     }
 
     // ---- facing + animation ----
@@ -351,9 +387,9 @@ const Player = {
     if (this.blob) {
       const air = U.clamp(1 - (this.pos.y - ground) / 7, 0.3, 1);
       const r = 0.92 * air;
-      this.blob.visible = GFX.q.blobs;
-      this.blob.position.set(this.pos.x, ground, this.pos.z);
-      this.blob.material.opacity = 0.3 * air;
+      this.blob.visible = GFX.q.blobs && this.swimT < 0.6;
+      this.blob.position.set(this.pos.x, terrain, this.pos.z);
+      this.blob.material.opacity = 0.3 * air * (1 - this.swimT);
       GFX.conform(this.blob, this.pos.x, this.pos.z, r, 0.07);
     }
   },
