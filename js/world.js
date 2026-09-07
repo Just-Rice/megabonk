@@ -100,9 +100,12 @@ const World = {
   // The height a swimmer's feet sit at. Includes the live wave height (damped
   // toward the shore exactly as the shader damps it) so bodies rise and fall
   // with the surface they are floating on.
-  floatY(ground, t, x, z) {
+  // `submerge` is how far the swimmer's feet sit below the surface. It has to
+  // scale with the body: a fixed depth tuned for the player puts a small
+  // enemy completely under water, so it reads as walking along the bed.
+  floatY(ground, t, x, z, submerge) {
     if (t <= 0) return ground;
-    let surface = this.WATER - 1.35;
+    let surface = this.WATER - (submerge === undefined ? 1.35 : submerge);
     if (x !== undefined) {
       const u = U.clamp(this.waterDepthAt(x, z) / 1.4, 0, 1);
       surface += this.waveAt(x, z) * (u * u * (3 - 2 * u));   // shader uses smoothstep

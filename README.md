@@ -161,6 +161,12 @@ pushed past 1.0 so the bloom pass catches it, whitecaps on genuine crests and a 
 the shore. Depth is baked per vertex, so the shallows stay see-through while deep water turns
 opaque, and the swell damps to nothing at the waterline instead of climbing the beach.
 
+Swimmers sit at a waterline scaled to their own size. A single submersion depth tuned for the
+player left a Bonkling completely under the surface — which is why the horde looked like it was
+walking along the lake bed rather than swimming. Every body now floats with roughly half of itself
+out of the water, whatever its size, and animates a flutter kick and forward lean instead of a
+walking stride, leaving a wake behind it.
+
 **The waves are defined once and used twice.** `World.WAVES` is evaluated by the vertex shader to
 displace the surface, and the same table is emitted into the GLSL from JavaScript so the CPU can
 evaluate the identical sum. Swimmers therefore ride the actual water: measured across eight

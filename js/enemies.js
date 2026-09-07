@@ -121,6 +121,9 @@ const Enemies = {
     blob.scale.setScalar(0.72);
     g.add(blob);
 
+    // yaw first, then pitch/roll in the turned frame, so a swimming lean
+     // tips the nose down whichever way the creature is facing
+    g.rotation.order = 'YXZ';
     g.userData.body = body;
     g.userData.legs = [legL, legR];
     g.userData.extras = extras;
@@ -490,15 +493,38 @@ const Enemies = {
         if (w) { w[0].rotation.z = Math.sin(e.hopT * 22) * 0.8; w[1].rotation.z = -Math.sin(e.hopT * 22) * 0.8; }
       } else {
         const hop = Math.abs(Math.sin(e.hopT * (3 + e.speed * 0.4))) * (e.isBoss ? 0.22 : 0.18);
-        const surf = World.floatY(ground, e.swimT, e.pos.x, e.pos.z);
+        // body top sits about half out of the water whatever the creature's size
+        const surf = World.floatY(ground, e.swimT, e.pos.x, e.pos.z, 0.62 * e.scale);
         e.pos.y = surf + hop * (1 - e.swimT) + (e.swimT > 0.05 ? Math.sin(e.hopT * 2.2) * 0.05 * e.swimT : 0);
+
         const legs = e.mesh.userData.legs;
         if (legs) {
-          const sw = Math.sin(e.hopT * (6 + e.speed)) * 0.7;
-          legs[0].rotation.x = sw; legs[1].rotation.x = -sw;
+          const walk = Math.sin(e.hopT * (6 + e.speed)) * 0.7;
+          if (e.swimT > 0.02) {
+            // treading water: quick shallow kicks angled back, not a stride
+            const k = e.hopT * 8.5, amp = 0.42;
+            const base = -0.5;
+            legs[0].rotation.x = U.lerp(walk, base + Math.sin(k) * amp, e.swimT);
+            legs[1].rotation.x = U.lerp(-walk, base + Math.sin(k + Math.PI) * amp, e.swimT);
+          } else {
+            legs[0].rotation.x = walk; legs[1].rotation.x = -walk;
+          }
         }
       }
       e.mesh.rotation.y = Math.atan2(sx, sz);
+      if (e.swimT > 0.02) {
+        // nose down into the stroke, with a slow roll
+        e.mesh.rotation.x = e.swimT * (0.30 + Math.sin(e.hopT * 2.6) * 0.07);
+        e.mesh.rotation.z = e.swimT * Math.sin(e.hopT * 1.9) * 0.10;
+        // and leave a wake, thinned out so a lake full of swimmers is affordable
+        if (e.swimT > 0.5 && U.chance(dt * 2.0) &&
+            U.dist2(e.pos.x, e.pos.z, px, pz) < 40 * 40) {
+          FX._tmp.set(e.pos.x, World.surfaceY(e.pos.x, e.pos.z) + 0.05, e.pos.z);
+          FX.trail(FX._tmp, 0xbfe6f0, 0.2, 0.35);
+        }
+      } else if (e.mesh.rotation.x !== 0) {
+        e.mesh.rotation.x = 0; e.mesh.rotation.z = 0;
+      }
 
       const blob = e.mesh.userData.blob;
       if (blob) {

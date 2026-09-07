@@ -159,6 +159,7 @@ const Player = {
     const cape = mk(0.95, 1.15, 0.12, c.hat, 0, 1.5, -0.42);
     body.add(torso, head, hat, brim, eyeL, eyeR, armL, armR, glintL, glintR, belt, buckle, cape);
 
+    g.rotation.order = 'YXZ';      // yaw first, so the swim lean follows facing
     const legL = mk(0.36, 0.9, 0.36, c.pants, -0.27, 0.5, 0);
     const legR = mk(0.36, 0.9, 0.36, c.pants, 0.27, 0.5, 0);
 
@@ -316,7 +317,7 @@ const Player = {
 
     // ---- jump / gravity (terrain following) ----
     const terrain = World.heightAt(this.pos.x, this.pos.z);
-    const ground = World.floatY(terrain, this.swimT, this.pos.x, this.pos.z);
+    const ground = World.floatY(terrain, this.swimT, this.pos.x, this.pos.z, 1.3);
     if (input.jump && this.onGround) {
       this.jumpVel = this.swimT > 0.4 ? 5.5 : 11.5;   // you cannot leap out of deep water
       this.onGround = false;
@@ -361,10 +362,23 @@ const Player = {
 
     const p = this.parts;
     const swing = Math.sin(this.bobT * 3.2) * U.clamp(speedNow / 7, 0, 1) * 0.9;
-    p.legL.rotation.x = swing;
-    p.legR.rotation.x = -swing;
-    p.armL.rotation.x = -swing * 0.7;
-    p.armR.rotation.x = swing * 0.7;
+    const s = this.swimT;
+    if (s > 0.02) {
+      // flutter kick and an overarm pull, blended in as you wade deeper
+      const k = this.bobT * 5.0;
+      p.legL.rotation.x = U.lerp(swing, -0.5 + Math.sin(k) * 0.5, s);
+      p.legR.rotation.x = U.lerp(-swing, -0.5 + Math.sin(k + Math.PI) * 0.5, s);
+      p.armL.rotation.x = U.lerp(-swing * 0.7, -1.15 + Math.sin(k * 0.75) * 0.85, s);
+      p.armR.rotation.x = U.lerp(swing * 0.7, -1.15 + Math.sin(k * 0.75 + Math.PI) * 0.85, s);
+      this.mesh.rotation.x = 0.32 * s;
+      this.mesh.rotation.z = Math.sin(this.bobT * 1.6) * 0.09 * s;
+    } else {
+      p.legL.rotation.x = swing;
+      p.legR.rotation.x = -swing;
+      p.armL.rotation.x = -swing * 0.7;
+      p.armR.rotation.x = swing * 0.7;
+      if (this.mesh.rotation.x !== 0) { this.mesh.rotation.x = 0; this.mesh.rotation.z = 0; }
+    }
     p.body.position.y = Math.abs(Math.sin(this.bobT * 3.2)) * 0.09 * U.clamp(speedNow / 5, 0, 1);
     p.body.rotation.z = Math.sin(this.bobT * 3.2) * 0.03;
 
