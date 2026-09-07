@@ -349,6 +349,12 @@ const Game = {
       : U.damp(this._camReach, reach, 0.08, dt);
     want.lerpVectors(this._eye, want, this._camReach);
     if (want.y < minY) want.y = minY;
+    // Pulling in handles foliage, but if the shortened position still lands
+    // inside a trunk we would be looking at the inside of a cylinder. Shove it
+    // clear of solid geometry as a last resort.
+    World.resolveCircle(want, 0.55, want.y);
+    const floorY = World.heightAt(want.x, want.z) + 2.2;
+    if (want.y < floorY) want.y = floorY;
 
     this.camPos.x = U.damp(this.camPos.x, want.x, 0.0006, dt);
     this.camPos.y = U.damp(this.camPos.y, want.y, 0.0006, dt);

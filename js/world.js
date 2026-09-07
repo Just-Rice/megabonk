@@ -9,7 +9,7 @@ const World = {
   SEG: 170,
   WATER: -3.4,
 
-  LAKE: { x: -48, z: 40, r: 31 },
+  LAKE: { x: -44, z: 36, r: 36 },
   SUN_POS: new THREE.Vector3(320, 88, 200),   // low, in the sunset band, so shafts reach the frame
   HILL: { x: 52, z: -46, r: 34, h: 13 },
 
@@ -32,10 +32,25 @@ const World = {
     const hd = Math.hypot(x - this.HILL.x, z - this.HILL.z) / this.HILL.r;
     if (hd < 1) { const t = 1 - hd; h += t * t * (3 - 2 * t) * this.HILL.h; }
 
+    // Lake basin. A smoothstep blend toward a low point makes a shallow cone
+    // whose middle is the only part under water; this is an explicit profile
+    // instead — flat floor out to 3/4 of the radius, then a steep shelf up to
+    // a rim just above the waterline, so the lake fills its bowl and the beach
+    // is a narrow ring rather than a huge dry crater.
     const ld = Math.hypot(x - this.LAKE.x, z - this.LAKE.z) / this.LAKE.r;
-    if (ld < 1) {
-      const t = 1 - ld, s = t * t * (3 - 2 * t);
-      h = U.lerp(h, this.WATER - 3.7 + (d - 0.5) * 1.6, s);
+    if (ld < 1.3) {
+      const FLOOR = this.WATER - 4.4;
+      const RIM = this.WATER + 1.6;
+      let bed;
+      if (ld < 0.75) {
+        bed = FLOOR + (d - 0.5) * 1.1;                  // gently uneven floor
+      } else {
+        const t = U.clamp((ld - 0.75) / 0.25, 0, 1);
+        bed = U.lerp(FLOOR, RIM, t * t * (3 - 2 * t));  // the shelf
+      }
+      // ease the bowl into the surrounding land so the rim is not a step
+      const w = ld <= 1 ? 1 : U.clamp((1.3 - ld) / 0.3, 0, 1);
+      h = U.lerp(h, bed, w * w * (3 - 2 * w));
     }
 
     const cd = Math.hypot(x, z);
@@ -61,7 +76,7 @@ const World = {
   // or wades reads this.
   // How deep the water actually is. Used for colour, foam and swimming.
   waterDepthAt(x, z) {
-    if (this.lakeAt(x, z) > 1.3) return 0;
+    if (this.lakeAt(x, z) > 1.1) return 0;
     const d = this.WATER - this.heightAt(x, z);
     return d > 0 ? d : 0;
   },
@@ -69,12 +84,11 @@ const World = {
   // How much water covers a point, 0..1. Separate from depth so the surface
   // can fade out at the basin rim without the shader also thinking the middle
   // of the lake is shallow and covering it in shore foam.
+  // The bed now climbs above the waterline on its own before the rim, so the
+  // surface ends where the water actually runs out; no artificial taper.
   waterCoverAt(x, z) {
-    const lake = this.lakeAt(x, z);
-    if (lake > 1.3) return 0;
-    if (this.WATER - this.heightAt(x, z) <= 0) return 0;
-    const rim = U.clamp((1.3 - lake) / 0.3, 0, 1);
-    return rim * rim * (3 - 2 * rim);
+    if (this.lakeAt(x, z) > 1.1) return 0;
+    return this.WATER - this.heightAt(x, z) > 0 ? 1 : 0;
   },
 
   // 0 = walking, 1 = fully swimming. Blended so the shoreline transition is
@@ -224,9 +238,10 @@ const World = {
       if (lake < 1.12 && depth > 0.3) {
         // under the lake surface
         tmp.copy(cDeep).lerp(cSand, U.clamp(1 - depth / 2.0, 0, 1));
-      } else if (lake < 1.25 && y < this.WATER + 1.6) {
-        // the beach ring, and only around the actual lake
-        const t = U.clamp((y - this.WATER + 0.3) / 1.9, 0, 1);
+      } else if (lake < 1.15 && y < this.WATER + 0.9) {
+        // a narrow beach hugging the waterline; the rim shelf itself is grass,
+        // otherwise the sand shading spreads far wider than the actual shore
+        const t = U.clamp((y - this.WATER + 0.25) / 1.15, 0, 1);
         tmp.copy(cSand).lerp(cGrass, t * t);
       } else {
         // broad, slow colour drift so the grass never reads as one flat sheet
@@ -316,7 +331,7 @@ ${dx}${dz}        return d;
   },
 
   _buildWater() {
-    const L = this.LAKE, span = L.r * 3.0, seg = 144;
+    const L = this.LAKE, span = L.r * 2.4, seg = 144;
     const geo = new THREE.PlaneGeometry(span, span, seg, seg);
     geo.rotateX(-Math.PI / 2);
 
@@ -584,7 +599,7 @@ ${this._waveGLSL()}
         // through foliage rather than stopping dead in a cloud of leaves
         this.addCollider(x, z, 0.6 * s, 6.2 * s);
         // the foliage blocks the camera only
-        this.addSoftCollider(x, z, 1.65 * s, y + 1.5 * s, y + 6.3 * s);
+        this.addSoftCollider(x, z, 1.15 * s, y + 1.6 * s, y + 6.2 * s);
         // trunk: 2.6s tall, buried 0.1s, so centre sits at 1.2s
         trunks.push({ x, y: y + 1.2 * s, z, s: s * 0.5, sy: s * 2.6, ry });
         // each canopy tier overlaps the one below rather than hovering above it
@@ -846,7 +861,10 @@ ${this._waveGLSL()}
   cameraReach(eye, want) {
     const dx = want.x - eye.x, dy = want.y - eye.y, dz = want.z - eye.z;
     const STEPS = 12;
-    let last = 0.46;      // never jam the camera right up against the player
+    // Foliage should nudge the camera, not slam it into the player's back: in
+    // a dense wood something is almost always clipping the view, and a hard
+    // pull-in is worse than briefly seeing leaves.
+    let last = 0.58;
     for (let i = 3; i <= STEPS; i++) {
       const t = i / STEPS;
       if (this._camBlocked(eye.x + dx * t, eye.y + dy * t, eye.z + dz * t)) return last;

@@ -149,6 +149,12 @@ can cross to buy space, or get caught in. Flyers ignore it entirely.
 
 ![water](docs/water.jpg)
 
+The basin is an explicit profile rather than a blend toward a low point: a flat floor out to three
+quarters of the radius, then a steep shelf up to a rim just above the waterline. A smoothstep blend
+produces a shallow cone whose middle is the only part under water — that left the lake covering 50%
+of the basin radius (25% of its area) with a 15-unit dry bowl ringing it. The profile fills 92% of
+the radius, 4.4 units deep, with a beach a few metres wide.
+
 The surface is a custom shader: a sum of four travelling waves with analytic normals, three layers
 of scrolling procedural ripple normals over the top, a Fresnel-weighted sky reflection, a sun glint
 pushed past 1.0 so the bloom pass catches it, whitecaps on genuine crests and a lapping foam line at
