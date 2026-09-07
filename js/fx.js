@@ -6,6 +6,7 @@
 const FX = {
   scene: null,
   camera: null,
+  _tmp: new THREE.Vector3(),
 
   numbers: [],  numIdx: 0,
   parts: [],    partIdx: 0,
@@ -215,7 +216,11 @@ const FX = {
       if (d.life <= 0) { p.visible = false; continue; }
       d.v.y += d.grav * dt;
       p.position.addScaledVector(d.v, dt);
-      const ground = World.heightAt(p.position.x, p.position.z);
+      // debris skips off the water surface rather than sinking to the lake bed
+      const wd = World.waterDepthAt(p.position.x, p.position.z);
+      const ground = wd > 0.3
+        ? World.surfaceY(p.position.x, p.position.z)
+        : World.heightAt(p.position.x, p.position.z);
       if (p.position.y < ground + 0.1) {
         p.position.y = ground + 0.1;
         d.v.y = Math.abs(d.v.y) * 0.34;

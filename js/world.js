@@ -71,10 +71,17 @@ const World = {
     return U.clamp((this.waterDepthAt(x, z) - 0.55) / 0.95, 0, 1);
   },
 
-  // the height a swimmer's feet sit at, given the ground under them
-  floatY(ground, t) {
+  // The height a swimmer's feet sit at. Includes the live wave height (damped
+  // toward the shore exactly as the shader damps it) so bodies rise and fall
+  // with the surface they are floating on.
+  floatY(ground, t, x, z) {
     if (t <= 0) return ground;
-    return U.lerp(ground, Math.max(ground, this.WATER - 1.35), t);
+    let surface = this.WATER - 1.35;
+    if (x !== undefined) {
+      const u = U.clamp(this.waterDepthAt(x, z) / 1.4, 0, 1);
+      surface += this.waveAt(x, z) * (u * u * (3 - 2 * u));   // shader uses smoothstep
+    }
+    return U.lerp(ground, Math.max(ground, surface), t);
   },
   underwater(x, z) { return this.heightAt(x, z) < this.WATER && this.lakeAt(x, z) < 1.1; },
 
@@ -166,8 +173,8 @@ const World = {
         b.position.set(U.rand(-12, 12), U.rand(-2, 2), U.rand(-7, 7));
         puff.add(b);
       }
-      const a = Math.random() * U.TAU, r = U.rand(120, 320);
-      puff.position.set(Math.cos(a) * r, U.rand(60, 115), Math.sin(a) * r);
+      const a = Math.random() * U.TAU, r = U.rand(210, 400);
+      puff.position.set(Math.cos(a) * r, U.rand(85, 150), Math.sin(a) * r);
       puff.userData.spin = U.rand(0.0015, 0.006) * (Math.random() < 0.5 ? -1 : 1);
       this.clouds.add(puff);
     }
@@ -250,8 +257,54 @@ const World = {
   },
 
   // ---- water ----------------------------------------------------------
+  // One wave definition, used twice: the shader displaces the surface with it
+  // and JavaScript evaluates the same sum so swimmers ride the real waves
+  // instead of a flat plane pretending to be water.
+  WAVES: [
+    { kx: 0.300, kz: 0.120, sp: 1.05, am: 0.26 },   // ~19m swell
+    { kx: -0.160, kz: 0.340, sp: -0.90, am: 0.18 },  // ~17m crossing it
+    { kx: 0.520, kz: 0.450, sp: 1.55, am: 0.085 },   // ~9m chop
+    { kx: 0.950, kz: -0.780, sp: -2.30, am: 0.04 }   // ~5m ripple
+  ],
+
+  // world Y of the water surface at a point (only meaningful over the lake)
+  surfaceY(x, z) {
+    const u = U.clamp(this.waterDepthAt(x, z) / 1.4, 0, 1);
+    return this.WATER + this.waveAt(x, z) * (u * u * (3 - 2 * u));
+  },
+
+  waveAt(x, z, t) {
+    if (t === undefined) t = this._elapsed;
+    let h = 0;
+    for (let i = 0; i < this.WAVES.length; i++) {
+      const w = this.WAVES[i];
+      h += w.am * Math.sin(x * w.kx + z * w.kz + t * w.sp);
+    }
+    return h;
+  },
+
+  _waveGLSL() {
+    // emit the identical sum into the shader so the two can never drift
+    let disp = '', dx = '', dz = '';
+    for (const w of this.WAVES) {
+      const ph = `(p.x * ${w.kx.toFixed(4)} + p.y * ${w.kz.toFixed(4)} + t * ${w.sp.toFixed(4)})`;
+      disp += `  h += ${w.am.toFixed(4)} * sin${ph};\n`;
+      dx += `  d.x += ${(w.am * w.kx).toFixed(6)} * cos${ph};\n`;
+      dz += `  d.y += ${(w.am * w.kz).toFixed(6)} * cos${ph};\n`;
+    }
+    return `
+      float waveH(vec2 p, float t) {
+        float h = 0.0;
+${disp}        return h;
+      }
+      vec2 waveD(vec2 p, float t) {
+        vec2 d = vec2(0.0);
+${dx}${dz}        return d;
+      }`;
+  },
+
   _buildWater() {
-    const L = this.LAKE, span = L.r * 2.5, seg = 72;
+    const L = this.LAKE, span = L.r * 2.6, seg = 128;
     const geo = new THREE.PlaneGeometry(span, span, seg, seg);
     geo.rotateX(-Math.PI / 2);
 
@@ -260,10 +313,14 @@ const World = {
     const pos = geo.attributes.position;
     const depth = new Float32Array(pos.count);
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i) + L.x, z = pos.getZ(i) + L.z;
-      depth[i] = this.WATER - this.heightAt(x, z);
+      depth[i] = this.WATER - this.heightAt(pos.getX(i) + L.x, pos.getZ(i) + L.z);
     }
     geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+
+    const ripple = GFX.surface('ripple', {
+      size: 256, scale: 9, octaves: 4, contrast: 1.1,
+      color: 0xffffff, dark: 0x999999, tintAmount: 0.5, bump: 2.2
+    }).normalMap;
 
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -271,10 +328,13 @@ const World = {
       fog: true,
       uniforms: Object.assign({
         uTime: { value: 0 },
-        uShallow: { value: GFX.col(0x4a6a63) },
-        uDeep: { value: GFX.col(0x101d24) },
-        uFoam: { value: GFX.col(0xc8d4d2) },
-        uSunDir: { value: new THREE.Vector3(0.72, 0.42, 0.45).normalize() }
+        uRipple: { value: ripple },
+        uShallow: { value: GFX.col(0x2a6b73) },
+        uDeep: { value: GFX.col(0x08222e) },
+        uFoam: { value: GFX.col(0xdfe8e6) },
+        uSkyLow: { value: GFX.col(0xcdd8e4) },
+        uSkyHigh: { value: GFX.col(0x6b88b8) },
+        uSunDir: { value: new THREE.Vector3().copy(this.SUN_POS).normalize() }
       }, THREE.UniformsLib.fog),
       vertexShader: `
         attribute float aDepth;
@@ -282,53 +342,84 @@ const World = {
         varying float vDepth;
         varying vec3 vWorld;
         varying vec3 vNrm;
+        varying float vCrest;
         #include <fog_pars_vertex>
+${this._waveGLSL()}
         void main() {
           vDepth = aDepth;
-          vec3 p = position;
-          float w1 = sin(p.x * 0.28 + uTime * 1.25) * 0.16;
-          float w2 = sin(p.z * 0.21 - uTime * 0.95) * 0.14;
-          float w3 = sin((p.x + p.z) * 0.13 + uTime * 0.6) * 0.10;
-          p.y += w1 + w2 + w3;
-          // analytic normal from the same three waves
-          float dx = cos(p.x * 0.28 + uTime * 1.25) * 0.28 * 0.16
-                   + cos((p.x + p.z) * 0.13 + uTime * 0.6) * 0.13 * 0.10;
-          float dz = cos(p.z * 0.21 - uTime * 0.95) * 0.21 * 0.14
-                   + cos((p.x + p.z) * 0.13 + uTime * 0.6) * 0.13 * 0.10;
-          vNrm = normalize(vec3(-dx, 1.0, -dz));
-          vec4 wp = modelMatrix * vec4(p, 1.0);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          // waves are evaluated in world space, which is what the CPU side does
+          float h = waveH(wp.xz, uTime);
+          // damp the swell to nothing at the shoreline so it cannot climb the beach
+          float shoreDamp = smoothstep(0.0, 1.4, aDepth);
+          h *= shoreDamp;
+          wp.y += h;
+          vCrest = h;
+          vec2 d = waveD(wp.xz, uTime) * shoreDamp;
+          vNrm = normalize(vec3(-d.x, 1.0, -d.y));
           vWorld = wp.xyz;
-          vec4 mv = viewMatrix * wp;
-          gl_Position = projectionMatrix * mv;
+          // three's fog_vertex chunk expands to fogDepth = -mvPosition.z,
+          // so the view-space position has to be named exactly that
+          vec4 mvPosition = viewMatrix * wp;
+          gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`,
       fragmentShader: `
-        uniform vec3 uShallow, uDeep, uFoam, uSunDir;
+        uniform vec3 uShallow, uDeep, uFoam, uSkyLow, uSkyHigh, uSunDir;
         uniform float uTime;
+        uniform sampler2D uRipple;
         varying float vDepth;
         varying vec3 vWorld;
         varying vec3 vNrm;
+        varying float vCrest;
         #include <fog_pars_fragment>
+
         void main() {
           if (vDepth <= 0.02) discard;
+
+          // two scrolling normal layers give fine ripple detail on top of the
+          // big analytic swell
+          vec2 uv1 = vWorld.xz * 0.085 + vec2(uTime * 0.016, uTime * 0.011);
+          vec2 uv2 = vWorld.xz * 0.210 - vec2(uTime * 0.026, uTime * 0.033);
+          vec2 uv3 = vWorld.xz * 0.480 + vec2(uTime * 0.041, -uTime * 0.037);
+          vec3 r1 = texture2D(uRipple, uv1).xyz * 2.0 - 1.0;
+          vec3 r2 = texture2D(uRipple, uv2).xyz * 2.0 - 1.0;
+          vec3 r3 = texture2D(uRipple, uv3).xyz * 2.0 - 1.0;
+          vec2 detail = r1.xy * 0.55 + r2.xy * 0.35 + r3.xy * 0.22;
+          float choppy = smoothstep(0.20, 1.1, vDepth);
+          vec3 N = normalize(vec3(vNrm.x + detail.x * 1.25 * choppy,
+                                  vNrm.y,
+                                  vNrm.z + detail.y * 1.25 * choppy));
+
           vec3 V = normalize(cameraPosition - vWorld);
-          vec3 N = normalize(vNrm);
-          float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+          float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
+          fres = mix(0.03, 1.0, fres);
 
-          vec3 col = mix(uShallow, uDeep, clamp(vDepth / 3.2, 0.0, 1.0));
-          col = mix(col, vec3(0.52, 0.60, 0.68), fres * 0.85);
+          // body colour by depth, then the sky mirrored in by Fresnel
+          vec3 body = mix(uShallow, uDeep, clamp(vDepth / 3.0, 0.0, 1.0));
+          vec3 R = reflect(-V, N);
+          vec3 sky = mix(uSkyLow, uSkyHigh, smoothstep(0.0, 0.55, R.y));
+          vec3 col = mix(body, sky, fres * 0.92);
 
-          // sun glint — pushed past 1.0 on purpose so bloom catches it
+          // sun glint, deliberately over 1.0 so the bloom pass catches it
           vec3 H = normalize(uSunDir + V);
           float spec = pow(max(dot(N, H), 0.0), 90.0);
-          col += vec3(2.2, 1.85, 1.4) * spec;
+          col += vec3(3.8, 3.2, 2.4) * spec * (0.3 + 0.7 * choppy);
 
-          float shore = 1.0 - smoothstep(0.06, 0.55, vDepth);
-          float ripple = 0.5 + 0.5 * sin(vWorld.x * 1.7 + vWorld.z * 1.3 - uTime * 2.4);
-          col = mix(col, uFoam, shore * (0.35 + 0.5 * ripple));
+          // whitecaps on the crests, foam along the shore
+          // whitecaps ride the crests, and a tight lapping line marks the shore
+          // only genuine crests foam; the swell peaks near 0.5 so anything
+          // lower than this turns the whole lake into rapids
+          float caps = smoothstep(0.36, 0.56, vCrest) * choppy;
+          float shore = 1.0 - smoothstep(0.02, 0.34, vDepth);
+          float lap = 0.5 + 0.5 * sin(vWorld.x * 2.3 + vWorld.z * 1.9 - uTime * 2.6
+                                      + detail.x * 3.0);
+          col = mix(col, uFoam, clamp(caps * 0.34 + shore * (0.32 + 0.36 * lap), 0.0, 0.8));
 
-          float alpha = smoothstep(0.02, 0.42, vDepth) * 0.9;
-          gl_FragColor = vec4(col, alpha);
+          // shallows stay see-through, deep water turns opaque
+          float alpha = smoothstep(0.0, 0.30, vDepth) * mix(0.62, 0.97, clamp(vDepth / 2.6, 0.0, 1.0));
+          alpha = mix(alpha, 1.0, fres * 0.5);
+          gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
           #include <fog_fragment>
         }`
     });
@@ -461,21 +552,27 @@ const World = {
         const s = U.rand(0.75, 1.7);
         // trunk blocks; the canopy above it does not, so shots still fly
         // through foliage rather than stopping dead in a cloud of leaves
-        this.addCollider(x, z, 0.6 * s, 8 * s);
-        trunks.push({ x, y: y + 2.1 * s, z, s: s * 0.5, sy: s * 2.6, ry });
-        canopyA.push({ x, y: y + 4.5 * s, z, s: s * 2.5, sy: s * 2.6, ry });
-        canopyB.push({ x, y: y + 6.1 * s, z, s: s * 1.85, sy: s * 2.3, ry });
-        if (Math.random() < 0.6) canopyC.push({ x, y: y + 7.5 * s, z, s: s * 1.2, sy: s * 1.9, ry });
+        this.addCollider(x, z, 0.6 * s, 6.2 * s);
+        // the foliage blocks the camera only
+        this.addSoftCollider(x, z, 1.65 * s, y + 1.5 * s, y + 6.3 * s);
+        // trunk: 2.6s tall, buried 0.1s, so centre sits at 1.2s
+        trunks.push({ x, y: y + 1.2 * s, z, s: s * 0.5, sy: s * 2.6, ry });
+        // each canopy tier overlaps the one below rather than hovering above it
+        canopyA.push({ x, y: y + 2.9 * s, z, s: s * 2.5, sy: s * 2.8, ry });
+        canopyB.push({ x, y: y + 4.2 * s, z, s: s * 1.85, sy: s * 2.4, ry });
+        if (Math.random() < 0.6) canopyC.push({ x, y: y + 5.25 * s, z, s: s * 1.2, sy: s * 1.9, ry });
       } else if (roll < 0.30) {
-        const s = U.rand(0.55, 2.3), lift = U.rand(0.05, 0.7);
+        // lift has to scale with the boulder, otherwise small ones hover
+        const s = U.rand(0.55, 2.3), lift = U.rand(0.3, 0.55) * s;
         this.addCollider(x, z, 0.82 * s, lift + 0.9 * s);
         rocks.push({ x, y: y + lift, z, s, ry, rx: U.rand(0, 1), rz: U.rand(0, 1) });
       } else if (!steep && roll < 0.38) {
         const s = U.rand(0.5, 1.25);
         stems.push({ x, y: y + 0.6 * s, z, s: s * 0.42, sy: s * 1.25, ry });
-        caps.push({ x, y: y + 1.4 * s, z, s: s * 1.3, sy: s * 0.85, ry });
+        caps.push({ x, y: y + 1.1 * s, z, s: s * 1.3, sy: s * 0.85, ry });   // seated on the stem
       } else if (roll < 0.44) {
-        const s = U.rand(0.3, 0.8), sy = U.rand(1.5, 3.6), lift = U.rand(0.5, 1.5);
+        const s = U.rand(0.3, 0.8), sy = U.rand(1.5, 3.6);
+        const lift = sy * 0.5 - U.rand(0.2, 0.5);      // base buried, not hovering
         this.addCollider(x, z, s * 0.9, lift + sy * 0.5);
         crystals.push({ x, y: y + lift, z, s, sy, ry, rx: U.rand(-0.18, 0.18) });
       } else if (roll < 0.505) {
@@ -502,7 +599,7 @@ const World = {
         for (let k = -1; k <= 1; k++) {
           this.addCollider(x + ax * (sy * 0.33) * k, z + az * (sy * 0.33) * k, s * 1.15, s * 2.2);
         }
-        logs.push({ x, y: y + 0.35, z, s, sy, ry, rz: Math.PI / 2 });
+        logs.push({ x, y: y + s * 0.88, z, s, sy, ry, rz: Math.PI / 2 });   // resting on its side
       } else if (roll < 0.73) {
         flowers.push({ x, y: y + 0.45, z, s: U.rand(0.12, 0.24), sy: U.rand(0.7, 1.3), ry });
       } else {
@@ -679,6 +776,38 @@ const World = {
 
   addCollider(x, z, r, h) {
     this.colliders.push({ x, z, r, top: this.heightAt(x, z) + h, _seen: 0 });
+  },
+
+  // Volumes the camera must not sit inside but that nothing else cares about —
+  // tree canopies mostly. Shots and bodies pass straight through them.
+  softColliders: [],
+  addSoftCollider(x, z, r, bottom, top) {
+    this.softColliders.push({ x, z, r, bottom, top });
+  },
+
+  _camBlocked(x, y, z) {
+    for (let i = 0; i < this.softColliders.length; i++) {
+      const c = this.softColliders[i];
+      if (y < c.bottom || y > c.top) continue;
+      const dx = x - c.x, dz = z - c.z;
+      if (dx * dx + dz * dz < c.r * c.r) return true;
+    }
+    return this.blocked(x, y, z, 0.45);
+  },
+
+  // How far along eye -> want the camera can sit before something gets in the
+  // way. Pulling the camera in is the right fix for third person: shoving it
+  // sideways just swaps one obstruction for another.
+  cameraReach(eye, want) {
+    const dx = want.x - eye.x, dy = want.y - eye.y, dz = want.z - eye.z;
+    const STEPS = 12;
+    let last = 0.46;      // never jam the camera right up against the player
+    for (let i = 3; i <= STEPS; i++) {
+      const t = i / STEPS;
+      if (this._camBlocked(eye.x + dx * t, eye.y + dy * t, eye.z + dz * t)) return last;
+      last = t;
+    }
+    return 1;
   },
 
   indexColliders() {

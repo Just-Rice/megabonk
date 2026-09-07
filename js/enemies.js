@@ -490,8 +490,8 @@ const Enemies = {
         if (w) { w[0].rotation.z = Math.sin(e.hopT * 22) * 0.8; w[1].rotation.z = -Math.sin(e.hopT * 22) * 0.8; }
       } else {
         const hop = Math.abs(Math.sin(e.hopT * (3 + e.speed * 0.4))) * (e.isBoss ? 0.22 : 0.18);
-        const surf = World.floatY(ground, e.swimT);
-        e.pos.y = surf + hop * (1 - e.swimT) + (e.swimT > 0.05 ? Math.sin(e.hopT * 2.2) * 0.12 * e.swimT : 0);
+        const surf = World.floatY(ground, e.swimT, e.pos.x, e.pos.z);
+        e.pos.y = surf + hop * (1 - e.swimT) + (e.swimT > 0.05 ? Math.sin(e.hopT * 2.2) * 0.05 * e.swimT : 0);
         const legs = e.mesh.userData.legs;
         if (legs) {
           const sw = Math.sin(e.hopT * (6 + e.speed)) * 0.7;
@@ -638,8 +638,11 @@ const Loot = {
       it.t += dt;
       it.life += dt;
 
-      // little pop out of the corpse
-      const ground = World.heightAt(m.position.x, m.position.z) + 0.55;
+      // little pop out of the corpse; anything landing in the lake floats
+      const wd = World.waterDepthAt(m.position.x, m.position.z);
+      const ground = wd > 0.5
+        ? World.surfaceY(m.position.x, m.position.z) + 0.16
+        : World.heightAt(m.position.x, m.position.z) + 0.55;
       if (!it.settled) {
         it.vy -= 26 * dt;
         m.position.y += it.vy * dt;

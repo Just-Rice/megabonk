@@ -142,9 +142,23 @@ tripping on ankle-height scenery feels awful in a horde game.
 ### Swimmable water
 
 The lake is deep enough to swim. Past about half a metre of depth you stop walking the bottom and
-float at the surface at roughly half speed, bobbing, trailing a wake, unable to jump properly out of
-deep water. Enemies do exactly the same thing, so the lake is a real tactical feature — a slow lane
-you can cross to buy space, or get caught in. Flyers ignore it entirely.
+float at the surface at roughly half speed, trailing a wake and unable to jump properly out of deep
+water. Enemies do exactly the same thing, so the lake is a real tactical feature — a slow lane you
+can cross to buy space, or get caught in. Flyers ignore it entirely.
+
+![water](docs/water.jpg)
+
+The surface is a custom shader: a sum of four travelling waves with analytic normals, three layers
+of scrolling procedural ripple normals over the top, a Fresnel-weighted sky reflection, a sun glint
+pushed past 1.0 so the bloom pass catches it, whitecaps on genuine crests and a lapping foam line at
+the shore. Depth is baked per vertex, so the shallows stay see-through while deep water turns
+opaque, and the swell damps to nothing at the waterline instead of climbing the beach.
+
+**The waves are defined once and used twice.** `World.WAVES` is evaluated by the vertex shader to
+displace the surface, and the same table is emitted into the GLSL from JavaScript so the CPU can
+evaluate the identical sum. Swimmers therefore ride the actual water: measured across eight
+swimming enemies, feet track the rendered surface to within 3 cm. Dropped gems bob on it too, and
+debris skips off it rather than sinking to the lake bed.
 
 ### Ground decals follow the terrain
 

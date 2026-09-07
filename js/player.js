@@ -283,8 +283,10 @@ const Player = {
     this.swimT = U.damp(this.swimT, swim, 0.0001, dt);
     if (swim > 0.5 && !this._wasSwimming) {
       this._wasSwimming = true;
-      FX.burst(this.pos, 0x9fe8ff, 14, { speed: 7, size: 0.22, life: 0.5, additive: true, glow: 1.6 });
-      FX.ring(this.pos, 0x9fe8ff, 0.6, 4, 0.5);
+      // splash at the waterline, not down at the swimmer's feet
+      const surf = new THREE.Vector3(this.pos.x, World.surfaceY(this.pos.x, this.pos.z), this.pos.z);
+      FX.burst(surf, 0x9fe8ff, 14, { speed: 7, size: 0.22, life: 0.5, additive: true, glow: 1.6 });
+      FX.ring(surf, 0x9fe8ff, 0.6, 4, 0.5);
       SFX.noise(0.22, 0.2, 1400);
     } else if (swim < 0.2) {
       this._wasSwimming = false;
@@ -314,7 +316,7 @@ const Player = {
 
     // ---- jump / gravity (terrain following) ----
     const terrain = World.heightAt(this.pos.x, this.pos.z);
-    const ground = World.floatY(terrain, this.swimT);
+    const ground = World.floatY(terrain, this.swimT, this.pos.x, this.pos.z);
     if (input.jump && this.onGround) {
       this.jumpVel = this.swimT > 0.4 ? 5.5 : 11.5;   // you cannot leap out of deep water
       this.onGround = false;
@@ -334,7 +336,8 @@ const Player = {
     } else {
       // the height field is continuous, so snapping is stable and keeps the
       // feet planted on slopes; swimmers bob on the surface instead
-      this.pos.y = ground + (this.swimT > 0.05 ? Math.sin(this.bobT * 1.7) * 0.13 * this.swimT : 0);
+      // the wave itself supplies the rise and fall; this is just a little life
+      this.pos.y = ground + (this.swimT > 0.05 ? Math.sin(this.bobT * 1.7) * 0.05 * this.swimT : 0);
     }
 
     // wake trail while moving through water
@@ -343,7 +346,8 @@ const Player = {
       const moveSpeed = Math.hypot(this.vel.x, this.vel.z);
       if (this._splashT <= 0 && moveSpeed > 1.5) {
         this._splashT = 0.09;
-        FX.trail(this.pos, 0xbdf0ff, 0.3, 0.4);
+        FX._tmp.set(this.pos.x, World.surfaceY(this.pos.x, this.pos.z) + 0.05, this.pos.z);
+        FX.trail(FX._tmp, 0xbdf0ff, 0.3, 0.4);
       }
     }
 

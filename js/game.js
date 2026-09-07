@@ -26,6 +26,8 @@ const Game = {
   camPos: new THREE.Vector3(),
   camLook: new THREE.Vector3(),
   _sunNdc: new THREE.Vector3(),
+  _eye: new THREE.Vector3(),
+  _camReach: 1,
 
   input: { up: 0, down: 0, left: 0, right: 0, dash: false, jump: false },
   keys: {},
@@ -313,6 +315,7 @@ const Game = {
 
   // ---------------------------------------------------------
   _snapCamera() {
+    this._camReach = 1;
     const p = Player.pos;
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
     this.camPos.set(
@@ -333,10 +336,19 @@ const Game = {
       p.y + this.camDist * sp + 1.5,
       p.z + Math.cos(this.camYaw) * this.camDist * cp
     );
-    // keep the camera above the terrain, and out of tree trunks
+    // keep the camera above the terrain
     const minY = World.heightAt(want.x, want.z) + 2.2;
     if (want.y < minY) want.y = minY;
-    World.resolveCircle(want, 0.7, want.y);
+
+    // and pull it in rather than let it end up inside a trunk or a canopy
+    this._eye.set(p.x, p.y + 1.7, p.z);
+    const reach = World.cameraReach(this._eye, want);
+    // snap in fast when something intrudes, ease back out slowly
+    this._camReach = reach < this._camReach
+      ? reach
+      : U.damp(this._camReach, reach, 0.08, dt);
+    want.lerpVectors(this._eye, want, this._camReach);
+    if (want.y < minY) want.y = minY;
 
     this.camPos.x = U.damp(this.camPos.x, want.x, 0.0006, dt);
     this.camPos.y = U.damp(this.camPos.y, want.y, 0.0006, dt);
