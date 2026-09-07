@@ -55,6 +55,20 @@ const U = {
     return U.lerp(U.lerp(a, b, u), U.lerp(c, d, u), v);
   },
 
+  // Value noise whose lattice wraps, so a texture built from it tiles with no
+  // seam. The plain noise2 above does not wrap, which is what put a visible
+  // grid across the ground.
+  noise2Tiled(x, y, px, py) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const wx = n => ((n % px) + px) % px;
+    const wy = n => ((n % py) + py) % py;
+    const a = U.hash2(wx(xi), wy(yi)), b = U.hash2(wx(xi + 1), wy(yi));
+    const c = U.hash2(wx(xi), wy(yi + 1)), d = U.hash2(wx(xi + 1), wy(yi + 1));
+    return U.lerp(U.lerp(a, b, u), U.lerp(c, d, u), v);
+  },
+
   fbm(x, y, oct = 3) {
     let sum = 0, amp = 1, freq = 1, norm = 0;
     for (let i = 0; i < oct; i++) {

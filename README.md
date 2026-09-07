@@ -94,7 +94,8 @@ from disk.
   like flat paint.
 - **Procedural surfaces.** There are no texture files: ground, bark and stone albedo maps are
   generated once from value noise into canvases, with matching normal maps derived by a Sobel pass,
-  giving real surface relief under the moving sun.
+  giving real surface relief under the moving sun. The noise wraps its lattice, so the textures tile
+  with no seam — plain value noise does not wrap and laid a visible grid across the ground.
 
 - **HDR scene buffer.** The scene renders into a half-float, 4× multisampled render target, so
   highlights can exceed 1.0 instead of clamping to white.

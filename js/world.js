@@ -59,10 +59,22 @@ const World = {
 
   // How deep the water is over a point, 0 on dry land. Everything that swims
   // or wades reads this.
+  // How deep the water actually is. Used for colour, foam and swimming.
   waterDepthAt(x, z) {
-    if (this.lakeAt(x, z) > 1.25) return 0;
+    if (this.lakeAt(x, z) > 1.3) return 0;
     const d = this.WATER - this.heightAt(x, z);
     return d > 0 ? d : 0;
+  },
+
+  // How much water covers a point, 0..1. Separate from depth so the surface
+  // can fade out at the basin rim without the shader also thinking the middle
+  // of the lake is shallow and covering it in shore foam.
+  waterCoverAt(x, z) {
+    const lake = this.lakeAt(x, z);
+    if (lake > 1.3) return 0;
+    if (this.WATER - this.heightAt(x, z) <= 0) return 0;
+    const rim = U.clamp((1.3 - lake) / 0.3, 0, 1);
+    return rim * rim * (3 - 2 * rim);
   },
 
   // 0 = walking, 1 = fully swimming. Blended so the shoreline transition is
@@ -248,9 +260,9 @@ const World = {
     // baked AO, the noise map and its normals carry the surface itself
     this.terrain = new THREE.Mesh(geo, GFX.standard(0xffffff, {
       vertexColors: true, flatShading: false, roughness: 0.97, metalness: 0,
-      surface: 'ground', surfaceOpts: { size: 256, scale: 7, octaves: 5, contrast: 1.25,
-                                        color: 0xffffff, dark: 0xb8b8b8, tintAmount: 0.5, bump: 3.2 },
-      repeat: 42, bumpScale: 1.15
+      surface: 'ground', surfaceOpts: { size: 512, scale: 6, octaves: 6, contrast: 1.45,
+                                        color: 0xffffff, dark: 0x8e8e8e, tintAmount: 0.7, bump: 4.0 },
+      repeat: 17, bumpScale: 2.3
     }));
     this.terrain.receiveShadow = GFX.q.shadows;
     this.group.add(this.terrain);
@@ -304,7 +316,7 @@ ${dx}${dz}        return d;
   },
 
   _buildWater() {
-    const L = this.LAKE, span = L.r * 2.6, seg = 128;
+    const L = this.LAKE, span = L.r * 3.0, seg = 144;
     const geo = new THREE.PlaneGeometry(span, span, seg, seg);
     geo.rotateX(-Math.PI / 2);
 
@@ -312,10 +324,15 @@ ${dx}${dz}        return d;
     // surface out at the shoreline and draw foam on the shallows
     const pos = geo.attributes.position;
     const depth = new Float32Array(pos.count);
+    const cover = new Float32Array(pos.count);
     for (let i = 0; i < pos.count; i++) {
-      depth[i] = this.WATER - this.heightAt(pos.getX(i) + L.x, pos.getZ(i) + L.z);
+      const wx = pos.getX(i) + L.x, wz = pos.getZ(i) + L.z;
+      // depth drives colour and foam, coverage drives where the surface exists
+      depth[i] = this.waterDepthAt(wx, wz);
+      cover[i] = this.waterCoverAt(wx, wz);
     }
     geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+    geo.setAttribute('aCover', new THREE.BufferAttribute(cover, 1));
 
     const ripple = GFX.surface('ripple', {
       size: 256, scale: 9, octaves: 4, contrast: 1.1,
@@ -332,13 +349,15 @@ ${dx}${dz}        return d;
         uShallow: { value: GFX.col(0x2a6b73) },
         uDeep: { value: GFX.col(0x08222e) },
         uFoam: { value: GFX.col(0xdfe8e6) },
-        uSkyLow: { value: GFX.col(0xcdd8e4) },
-        uSkyHigh: { value: GFX.col(0x6b88b8) },
+        uSkyLow: { value: GFX.col(0x8296ad) },
+        uSkyHigh: { value: GFX.col(0x4d6c99) },
         uSunDir: { value: new THREE.Vector3().copy(this.SUN_POS).normalize() }
       }, THREE.UniformsLib.fog),
       vertexShader: `
         attribute float aDepth;
+        attribute float aCover;
         uniform float uTime;
+        varying float vCover;
         varying float vDepth;
         varying vec3 vWorld;
         varying vec3 vNrm;
@@ -347,6 +366,7 @@ ${dx}${dz}        return d;
 ${this._waveGLSL()}
         void main() {
           vDepth = aDepth;
+          vCover = aCover;
           vec4 wp = modelMatrix * vec4(position, 1.0);
           // waves are evaluated in world space, which is what the CPU side does
           float h = waveH(wp.xz, uTime);
@@ -368,6 +388,7 @@ ${this._waveGLSL()}
         uniform vec3 uShallow, uDeep, uFoam, uSkyLow, uSkyHigh, uSunDir;
         uniform float uTime;
         uniform sampler2D uRipple;
+        varying float vCover;
         varying float vDepth;
         varying vec3 vWorld;
         varying vec3 vNrm;
@@ -375,7 +396,7 @@ ${this._waveGLSL()}
         #include <fog_pars_fragment>
 
         void main() {
-          if (vDepth <= 0.02) discard;
+          if (vCover <= 0.02) discard;
 
           // two scrolling normal layers give fine ripple detail on top of the
           // big analytic swell
@@ -387,9 +408,14 @@ ${this._waveGLSL()}
           vec3 r3 = texture2D(uRipple, uv3).xyz * 2.0 - 1.0;
           vec2 detail = r1.xy * 0.55 + r2.xy * 0.35 + r3.xy * 0.22;
           float choppy = smoothstep(0.20, 1.1, vDepth);
-          vec3 N = normalize(vec3(vNrm.x + detail.x * 1.25 * choppy,
-                                  vNrm.y,
-                                  vNrm.z + detail.y * 1.25 * choppy));
+          vec3 N;
+
+          float camDist = length(cameraPosition - vWorld);
+          float detailFade = 1.0 - smoothstep(16.0, 62.0, camDist);
+          detail *= detailFade;
+          N = normalize(vec3(vNrm.x + detail.x * 1.25 * choppy,
+                             vNrm.y,
+                             vNrm.z + detail.y * 1.25 * choppy));
 
           vec3 V = normalize(cameraPosition - vWorld);
           float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
@@ -399,7 +425,7 @@ ${this._waveGLSL()}
           vec3 body = mix(uShallow, uDeep, clamp(vDepth / 3.0, 0.0, 1.0));
           vec3 R = reflect(-V, N);
           vec3 sky = mix(uSkyLow, uSkyHigh, smoothstep(0.0, 0.55, R.y));
-          vec3 col = mix(body, sky, fres * 0.92);
+          vec3 col = mix(body, sky, fres * 0.86);
 
           // sun glint, deliberately over 1.0 so the bloom pass catches it
           vec3 H = normalize(uSunDir + V);
@@ -410,15 +436,16 @@ ${this._waveGLSL()}
           // whitecaps ride the crests, and a tight lapping line marks the shore
           // only genuine crests foam; the swell peaks near 0.5 so anything
           // lower than this turns the whole lake into rapids
-          float caps = smoothstep(0.36, 0.56, vCrest) * choppy;
+          float caps = smoothstep(0.36, 0.56, vCrest) * choppy * mix(0.25, 1.0, detailFade);
           float shore = 1.0 - smoothstep(0.02, 0.34, vDepth);
           float lap = 0.5 + 0.5 * sin(vWorld.x * 2.3 + vWorld.z * 1.9 - uTime * 2.6
                                       + detail.x * 3.0);
           col = mix(col, uFoam, clamp(caps * 0.34 + shore * (0.32 + 0.36 * lap), 0.0, 0.8));
 
-          // shallows stay see-through, deep water turns opaque
+          // shallows stay see-through, deep water turns opaque; coverage
+          // fades the sheet out at the rim independently of depth
           float alpha = smoothstep(0.0, 0.30, vDepth) * mix(0.62, 0.97, clamp(vDepth / 2.6, 0.0, 1.0));
-          alpha = mix(alpha, 1.0, fres * 0.5);
+          alpha = mix(alpha, 1.0, fres * 0.5) * vCover;
           gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
           #include <fog_fragment>
         }`
@@ -498,9 +525,12 @@ ${this._waveGLSL()}
     // the same mesh reading as a repeated stamp.
     if (opts.tint) {
       const t = opts.tint, c = new THREE.Color();
+      const h = t * 0.55;                      // let hue drift, not just value
       for (let i = 0; i < placements.length; i++) {
         const v = U.rand(1 - t, 1 + t);
-        c.setRGB(v * U.rand(0.94, 1.06), v, v * U.rand(0.94, 1.06));
+        c.setRGB(v * U.rand(1 - h, 1 + h),
+                 v * U.rand(1 - h * 0.5, 1 + h * 0.5),
+                 v * U.rand(1 - h, 1 + h));
         mesh.setColorAt(i, c);
       }
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -615,10 +645,17 @@ ${this._waveGLSL()}
                     repeat: 1.6, bumpScale: 1.25 };
 
     const trunkMat = GFX.standard(0x4e3b2a, Object.assign({ roughness: 0.98, flatShading: false }, bark));
-    const leafA = GFX.wind(GFX.standard(0x3f5230, { roughness: 0.95 }), 0.055);
-    const leafB = GFX.wind(GFX.standard(0x35462b, { roughness: 0.95 }), 0.055);
-    const leafC = GFX.wind(GFX.standard(0x4b5c34, { roughness: 0.95 }), 0.055);
-    const rockMat = GFX.standard(0x6e6a63, Object.assign({ roughness: 0.95, flatShading: false }, stone));
+    // three distinctly different greens, not three shades of the same one
+    const leafA = GFX.wind(GFX.standard(0x2f4a24, { roughness: 0.95 }), 0.055);
+    const leafB = GFX.wind(GFX.standard(0x53682f, { roughness: 0.95 }), 0.055);
+    const leafC = GFX.wind(GFX.standard(0x6d7b3a, { roughness: 0.95 }), 0.055);
+    // faceted, not smooth: rounded boulders read as featureless brown blobs
+    const rockMats = [
+      GFX.standard(0x6b6660, Object.assign({ roughness: 0.95, flatShading: true }, stone)),
+      GFX.standard(0x4a453f, Object.assign({ roughness: 0.98, flatShading: true }, stone)),
+      GFX.standard(0x8a7f70, Object.assign({ roughness: 0.9, flatShading: true }, stone))
+    ];
+    const rockMat = rockMats[0];
     const stemMat = GFX.standard(0xd6cbb4, { roughness: 0.9 });
     const capMat = GFX.standard(0x9c4b3c, { roughness: 0.8 });
     const crystalMat = GFX.standard(0x7fa8b8, { emissive: 0x1d3d4a, roughness: 0.25, metalness: 0.15 });
@@ -634,11 +671,19 @@ ${this._waveGLSL()}
     const bushMat = GFX.wind(GFX.standard(0x3a4a2c, { roughness: 0.97 }), 0.05, 1.6);
     const fernMat = GFX.wind(GFX.standard(0x4a5c33, { roughness: 0.97 }), 0.13, 2.0);
 
-    this._addInstanced(new THREE.CylinderGeometry(1, 1.3, 1, 8), trunkMat, trunks, { tint: 0.16 });
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafA, canopyA, { tint: 0.15 });
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafB, canopyB, { tint: 0.15 });
-    this._addInstanced(new THREE.ConeGeometry(1, 1, 7), leafC, canopyC, { tint: 0.15 });
-    this._addInstanced(new THREE.DodecahedronGeometry(1, 1), rockMat, rocks, { tint: 0.18 });
+    this._addInstanced(new THREE.CylinderGeometry(1, 1.3, 1, 8), trunkMat, trunks, { tint: 0.3 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafA, canopyA, { tint: 0.3 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 8), leafB, canopyB, { tint: 0.3 });
+    this._addInstanced(new THREE.ConeGeometry(1, 1, 7), leafC, canopyC, { tint: 0.3 });
+    // split the boulders across three stone types and two silhouettes
+    const rockBuckets = [[], [], []];
+    rocks.forEach((r, i) => rockBuckets[i % 3].push(r));
+    const rockGeos = [
+      new THREE.DodecahedronGeometry(1, 0),
+      new THREE.IcosahedronGeometry(1, 0),
+      new THREE.DodecahedronGeometry(1, 0)
+    ];
+    rockBuckets.forEach((b, i) => this._addInstanced(rockGeos[i], rockMats[i], b, { tint: 0.3 }));
     this._addInstanced(new THREE.CylinderGeometry(1, 1, 1, 7), stemMat, stems, { tint: 0.1 });
     this._addInstanced(new THREE.SphereGeometry(1, 11, 6, 0, U.TAU, 0, Math.PI / 2), capMat, caps, { tint: 0.14 });
     this._addInstanced(new THREE.ConeGeometry(1, 1, 5), crystalMat, crystals, { tint: 0.2 });

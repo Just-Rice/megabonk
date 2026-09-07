@@ -70,18 +70,18 @@ const GFX = {
     const g = c.getContext('2d');
     const img = g.createImageData(size, size);
     const d = img.data;
-    const scale = o.scale || 8;
+    const scale = Math.max(1, Math.round(o.scale || 8));
     const oct = o.octaves || 4;
     const contrast = o.contrast === undefined ? 1 : o.contrast;
     const streak = o.streak || 0;
+    // integer lattice periods per octave keep every octave seamless
+    const py0 = streak ? Math.max(1, Math.round(scale * 0.2)) : scale;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        // sample tiling noise by wrapping the lattice at `scale`
-        let v = 0, amp = 1, freq = scale, norm = 0;
+        let v = 0, amp = 1, norm = 0, px = scale, py = py0;
         for (let k = 0; k < oct; k++) {
-          const fx = (x / size) * freq, fy = (y / size) * freq * (1 - streak) + (streak ? (y / size) * freq * 0.15 : 0);
-          v += U.noise2(fx, fy) * amp;
-          norm += amp; amp *= 0.5; freq *= 2;
+          v += U.noise2Tiled((x / size) * px, (y / size) * py, px, py) * amp;
+          norm += amp; amp *= 0.5; px *= 2; py *= 2;
         }
         v /= norm;
         v = U.clamp(0.5 + (v - 0.5) * contrast, 0, 1);
