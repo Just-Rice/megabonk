@@ -977,6 +977,23 @@ ${this._waveGLSL()}
     return false;
   },
 
+  // A point roughly in front of `dir`, used to drop spawns into the player's
+  // path so that running in a straight line cannot outrun the horde.
+  aheadPoint(center, dir, minR, maxR, out) {
+    out = out || new THREE.Vector3();
+    const base = Math.atan2(dir.x, dir.z);
+    for (let i = 0; i < 12; i++) {
+      const a = base + U.rand(-0.85, 0.85);
+      const r = U.rand(minR, maxR);
+      out.set(center.x + Math.sin(a) * r, 0, center.z + Math.cos(a) * r);
+      const inside = out.x * out.x + out.z * out.z < (this.RADIUS - 6) * (this.RADIUS - 6);
+      if (inside && !this.blocked(out.x, this.heightAt(out.x, out.z) + 0.6, out.z, 0.7)) break;
+    }
+    this.confine(out, 6);
+    out.y = this.heightAt(out.x, out.z);
+    return out;
+  },
+
   ringPoint(center, minR, maxR, out) {
     out = out || new THREE.Vector3();
     for (let i = 0; i < 14; i++) {

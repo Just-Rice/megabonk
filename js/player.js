@@ -221,7 +221,7 @@ const Player = {
       this.xp -= this.xpNext;
       this.level++;
       levels++;
-      this.xpNext = Math.round(4 + Math.pow(this.level, 1.45) * 2.4);
+      this.xpNext = Math.round(5 + Math.pow(this.level, 1.75) * 3.0);
       if (levels > 12) break;   // safety valve against a runaway loop
     }
     return levels;

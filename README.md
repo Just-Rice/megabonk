@@ -38,7 +38,12 @@ Weapons fire on their own and auto-aim at the nearest enemy. You only steer, dod
 ## The run
 
 - **20 minutes** to survive. Enemy health, damage, speed and spawn rate all climb with the clock,
-  with a cubic health term late so maxed weapons stop trivialising the horde.
+  with a steep late health term so maxed weapons stop trivialising the horde. Past the scripted
+  three, bosses keep returning on a shorter timer, angrier each time, and about a third of the
+  horde spawns in front of you rather than around you — so running in a straight line no longer
+  outruns it.
+- Levels come **slowly and matter**: the XP curve is steep enough that an upgrade is a decision,
+  not a drumbeat.
 - **7 enemy types** — chasers, sprinters, flyers, armoured chunkers, exploding poppies, ranged spitters
   and megachunks — plus gold **elites** from about 2:30 onward.
 - **3 bosses** at 3:00 and every 3:30 after that: Bonkzilla, The Chonker, and Megabonk itself.

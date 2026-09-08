@@ -9,8 +9,8 @@ const WEAPONS = {
     desc: 'Swing a huge hammer in a wide arc. The classic.',
     up: ['+40% damage', '+1 swing arc', '+damage', 'wider arc', '+damage', 'knockback up', '+damage', 'MEGA BONK'],
     cd: l => Math.max(0.30, 0.80 - l * 0.05),
-    dmg: l => 18 + l * 9,
-    area: l => 4.2 + l * 0.45,
+    dmg: l => 24 + l * 13,
+    area: l => 4.6 + l * 0.5,
     fire(w) { Weapons._swing(w); }
   },
   missile: {
@@ -18,7 +18,7 @@ const WEAPONS = {
     desc: 'Homing bolts seek out the nearest bonkable.',
     up: ['+1 bolt', '+damage', '+1 bolt', 'faster bolts', '+damage', '+1 bolt', '+damage', '+2 bolts'],
     cd: l => Math.max(0.26, 0.78 - l * 0.06),
-    dmg: l => 12 + l * 6,
+    dmg: l => 14 + l * 7,
     count: l => 1 + Math.floor(l / 2),
     fire(w) { Weapons._missiles(w); }
   },
@@ -37,9 +37,9 @@ const WEAPONS = {
     desc: 'Orbs circle you and bonk anything they touch.',
     up: ['+1 orb', '+damage', 'faster spin', '+1 orb', '+damage', 'wider orbit', '+1 orb', '+damage'],
     cd: () => 999,
-    dmg: l => 14 + l * 7,
-    count: l => 1 + Math.floor((l + 1) / 2),
-    radius: l => 3.0 + l * 0.22,
+    dmg: l => 20 + l * 11,
+    count: l => 2 + Math.floor(l * 0.75),
+    radius: l => 3.2 + l * 0.32,
     fire() { }
   },
   lightning: {
@@ -47,7 +47,7 @@ const WEAPONS = {
     desc: 'Smites random nearby enemies from the sky.',
     up: ['+1 strike', '+damage', '+1 strike', 'bigger blast', '+damage', '+1 strike', '+damage', '+2 strikes'],
     cd: l => Math.max(0.45, 1.6 - l * 0.13),
-    dmg: l => 28 + l * 13,
+    dmg: l => 22 + l * 8,
     count: l => 1 + Math.floor(l / 2),
     area: l => 2.4 + l * 0.2,
     fire(w) { Weapons._lightning(w); }
@@ -65,8 +65,8 @@ const WEAPONS = {
     id: 'bomb', name: 'BONK BOMB', icon: '💣', max: 8,
     desc: 'Lobs bombs that explode in a big loud circle.',
     up: ['+1 bomb', '+damage', 'bigger blast', '+1 bomb', '+damage', 'bigger blast', '+1 bomb', '+damage'],
-    cd: l => Math.max(0.65, 1.9 - l * 0.15),
-    dmg: l => 34 + l * 17,
+    cd: l => Math.max(0.70, 2.0 - l * 0.15),
+    dmg: l => 26 + l * 11,
     count: l => 1 + Math.floor(l / 3),
     area: l => 4.2 + l * 0.45,
     fire(w) { Weapons._bomb(w); }
@@ -442,7 +442,10 @@ const Weapons = {
   },
 
   // ---------- per-frame ----------
+  _clock: 0,
+
   update(dt) {
+    this._clock += dt;
     // fire timers
     for (const w of this.owned) {
       const def = w.def;
@@ -600,15 +603,18 @@ const Weapons = {
       const z = Player.pos.z + Math.sin(o.phase) * r;
       o.mesh.position.set(x, Player.pos.y + 1.3 + Math.sin(o.phase * 2) * 0.3, z);
       o.mesh.rotation.y += dt * 4;
-      if (o.cd <= 0) {
-        let hit = false;
-        Enemies.query(x, z, 0.85, e => {
-          if (hit) return;
-          Enemies.hurt(e, dmg, { knock: o.mesh.position, knockPower: 6 });
-          hit = true;
-        });
-        if (hit) { o.cd = 0.28; SFX.hit(); }
-      }
+      // The orb used to go inert for 0.28s after touching ONE enemy, so it
+      // could never sweep a crowd — the cooldown belongs on each victim, not
+      // on the orb.
+      const now = this._clock;
+      let struck = 0;
+      Enemies.query(x, z, 1.5 * Player.stats.areaMul, e => {
+        if (e._orbT && e._orbT > now) return;
+        e._orbT = now + 0.24;
+        Enemies.hurt(e, dmg, { knock: o.mesh.position, knockPower: 6 });
+        struck++;
+      });
+      if (struck) SFX.hit();
     }
   },
 

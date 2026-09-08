@@ -156,7 +156,10 @@ const Enemies = {
     const mesh = this._take(poolId, base);
 
     const t = Game.time;
-    const hpScale = 1 + t / 60 * 0.46 + Math.pow(t / 185, 2.85);
+    // The late term is what decides whether the horde can survive long enough
+    // to actually reach a well-armed player; the linear part keeps the
+    // opening minutes where they are.
+    const hpScale = 1 + t / 60 * 0.46 + Math.pow(t / 175, 3.15);
     const dmgScale = 1 + t / 60 * 0.21;
     const spdScale = 1 + t / 60 * 0.024;
 
@@ -209,23 +212,26 @@ const Enemies = {
 
     // ---- boss ----
     this.bossTimer -= dt;
-    if (this.bossTimer <= 0 && !this.boss && this.bossIndex < BOSSES.length) {
-      const def = BOSSES[this.bossIndex];
+    if (this.bossTimer <= 0 && !this.boss) {
+      // after the scripted three, the last one keeps returning, angrier each
+      // time, so the back half of the run is not just trash mobs
+      const repeat = Math.max(0, this.bossIndex - (BOSSES.length - 1));
+      const def = BOSSES[Math.min(this.bossIndex, BOSSES.length - 1)];
       const p = World.ringPoint(Player.pos, 24, 30);
       const e = this.spawnAt('boss', p, { bossDef: Object.assign({}, def, { radius: 1.6, xp: 120 }) });
       if (e) {
-        e.dmg = def.dmg;
         e.speed = def.speed;
-        e.hp = e.maxHp = def.hp * (1 + t / 240);
-        e.xp = 150;
-        e.bossName = def.name;
+        e.hp = e.maxHp = def.hp * (1 + t / 240) * (1 + repeat * 0.85);
+        e.dmg = def.dmg * (1 + repeat * 0.15);
+        e.xp = 150 + repeat * 60;
+        e.bossName = repeat > 0 ? def.name + ' +' + repeat : def.name;
         this.boss = e;
         this.bossIndex++;
         this.bossTimer = 999;
         SFX.boss();
         FX.kick(1.2);
-        UI.toast(def.name + ' APPROACHES', '#ff3d7f');
-        UI.showBoss(def.name);
+        UI.toast(e.bossName + ' APPROACHES', '#ff3d7f');
+        UI.showBoss(e.bossName);
       }
     }
 
@@ -234,7 +240,7 @@ const Enemies = {
     const cap = Math.min(280, 40 + minute * 27);
     this.spawnTimer += dt * rate;
 
-    this.eliteChance = U.clamp((minute - 2.5) * 0.02, 0, 0.2);
+    this.eliteChance = U.clamp((minute - 2.5) * 0.024, 0, 0.28);
 
     if (this.spawnTimer > 8) this.spawnTimer = 8;   // never bank a giant burst
     while (this.spawnTimer >= 1) {
@@ -253,7 +259,11 @@ const Enemies = {
         avail.push({ id, weight: w });
       }
       const choice = U.weighted(avail);
-      const p = World.ringPoint(Player.pos, 26, 40);
+      // a third of the horde arrives in front of you rather than all around,
+      // so kiting in a straight line no longer trivially outruns everything
+      const p = (t > 60 && U.chance(0.34))
+        ? World.aheadPoint(Player.pos, Player.aim, 24, 36)
+        : World.ringPoint(Player.pos, 26, 40);
       this.spawnAt(choice.id, p, { elite: U.chance(this.eliteChance) });
     }
 
@@ -386,7 +396,8 @@ const Enemies = {
 
     if (e.isBoss) {
       this.boss = null;
-      this.bossTimer = 210;
+      // repeats come faster than the scripted openers
+      this.bossTimer = this.bossIndex >= BOSSES.length ? 135 : 210;
       FX.kick(1.4);
       SFX.win();
       UI.toast('BOSS BONKED!', '#ffd23d');
