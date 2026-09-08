@@ -7,21 +7,31 @@
 const GFX = {
   // ---- quality tiers -------------------------------------------------
   tier: 'high',
+  mobile: false,
   q: {
     bloom: true, msaa: true, shadows: true, shadowSize: 2048,
-    propDensity: 1.0, particleScale: 1.0, water: true, pixelRatio: 1.75, blobs: true
+    propDensity: 1.0, particleScale: 1.0, water: true, pixelRatio: 1.75,
+    blobs: true, hordeScale: 1.0
   },
 
   TIERS: {
-    low:    { bloom: false, msaa: false, shadows: false, shadowSize: 512,  propDensity: 0.4, particleScale: 0.45, water: true, pixelRatio: 1.0,  blobs: true },
-    medium: { bloom: true,  msaa: false, shadows: true,  shadowSize: 1024, propDensity: 0.7, particleScale: 0.75, water: true, pixelRatio: 1.35, blobs: true },
-    high:   { bloom: true,  msaa: true,  shadows: true,  shadowSize: 2048, propDensity: 1.0, particleScale: 1.0,  water: true, pixelRatio: 1.75, blobs: true }
+    low:    { bloom: false, msaa: false, shadows: false, shadowSize: 512,  propDensity: 0.4, particleScale: 0.45, water: true, pixelRatio: 1.0,  blobs: true, hordeScale: 0.6 },
+    medium: { bloom: true,  msaa: false, shadows: true,  shadowSize: 1024, propDensity: 0.7, particleScale: 0.75, water: true, pixelRatio: 1.35, blobs: true, hordeScale: 0.82 },
+    high:   { bloom: true,  msaa: true,  shadows: true,  shadowSize: 2048, propDensity: 1.0, particleScale: 1.0,  water: true, pixelRatio: 1.75, blobs: true, hordeScale: 1.0 }
   },
 
   setTier(name) {
     if (!this.TIERS[name]) return;
     this.tier = name;
     Object.assign(this.q, this.TIERS[name]);
+    if (this.mobile) {
+      // phone GPUs are fill-rate bound and their DPR is often 3; rendering at
+      // native resolution is the single most expensive mistake here
+      this.q.pixelRatio = Math.min(this.q.pixelRatio, 1.0);
+      this.q.propDensity *= 0.6;
+      this.q.hordeScale *= 0.75;
+      this.q.shadowSize = Math.min(this.q.shadowSize, 1024);
+    }
   },
 
   // ---- colour --------------------------------------------------------

@@ -249,11 +249,18 @@ const Player = {
     const fwd = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     const right = new THREE.Vector3(Math.cos(camYaw), 0, -Math.sin(camYaw));
     this.moveDir.set(0, 0, 0);
-    if (input.up) this.moveDir.add(fwd);
-    if (input.down) this.moveDir.sub(fwd);
-    if (input.right) this.moveDir.add(right);
-    if (input.left) this.moveDir.sub(right);
-    const moving = this.moveDir.lengthSq() > 0.0001;
+    let throttle = 1;
+    if (input.axis) {
+      // analog thumbstick: keep the magnitude so a light push walks
+      this.moveDir.addScaledVector(fwd, input.axis.y).addScaledVector(right, input.axis.x);
+      throttle = Math.min(1, this.moveDir.length());
+    } else {
+      if (input.up) this.moveDir.add(fwd);
+      if (input.down) this.moveDir.sub(fwd);
+      if (input.right) this.moveDir.add(right);
+      if (input.left) this.moveDir.sub(right);
+    }
+    const moving = this.moveDir.lengthSq() > 0.0001 && throttle > 0.12;
     if (moving) {
       this.moveDir.normalize();
       this.aim.copy(this.moveDir);
@@ -299,7 +306,7 @@ const Player = {
     const accel = this.onGround ? 42 : 18;
     const target = this.dashTime > 0
       ? this.aim.clone().multiplyScalar(speed)
-      : this.moveDir.clone().multiplyScalar(moving ? speed : 0);
+      : this.moveDir.clone().multiplyScalar(moving ? speed * throttle : 0);
 
     this.vel.x = U.damp(this.vel.x, target.x, 0.0001, dt * (accel / 42));
     this.vel.z = U.damp(this.vel.z, target.z, 0.0001, dt * (accel / 42));

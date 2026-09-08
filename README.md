@@ -18,6 +18,23 @@ python3 -m http.server 8765 && open http://localhost:8765
 
 ## Controls
 
+The game detects the device by **pointer capability**, not by sniffing the user agent: a coarse
+pointer with touch points means thumbs, whether that is a phone, a tablet or a Surface. A laptop
+with a touchscreen but a real mouse keeps the desktop scheme.
+
+### On a phone or tablet
+
+Left thumb anywhere on the left of the screen raises a **virtual stick** — it is analog, so a light
+push walks and a full push runs. Right thumb drags to swing the camera. **DASH** and **JUMP** sit
+under your right thumb, pause is top right. Portrait shows a prompt to rotate, since the HUD needs
+the long axis.
+
+Touch devices also start on the LOW graphics tier with the render scale capped at 1× (phone DPRs are
+often 3, and rendering at native resolution is the single most expensive mistake on mobile), fewer
+props, and a smaller horde budget. All three tiers are still selectable by hand.
+
+### On a computer
+
 | Input | Action |
 | --- | --- |
 | `WASD` / arrows | Move |

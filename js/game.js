@@ -42,6 +42,7 @@ const Game = {
     const canvas = document.getElementById('scene');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 
+    GFX.mobile = TouchCtl.detect();          // decided before the tier is chosen
     GFX.setTier(U.store('quality') || this.autoTier());
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, GFX.q.pixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -103,6 +104,7 @@ const Game = {
     Enemies.init(this.scene);
     Weapons.init(this.scene);
     UI.init();
+    TouchCtl.init();
 
     // compile the world's shader programs up front; otherwise the first
     // frame stalls for tens of milliseconds building them
@@ -190,9 +192,11 @@ const Game = {
     // keyboard camera turn, for anyone who doesn't want pointer lock
     if (k['q']) this.camYaw += 2.2 * 0.016;
     if (k['e']) this.camYaw -= 2.2 * 0.016;
+    TouchCtl.apply(this.input);              // thumbstick overrides the keys
   },
 
   lockPointer() {
+    if (TouchCtl.enabled) return;            // no pointer lock on a touchscreen
     if (this.state !== 'playing') return;
     const canvas = this.renderer.domElement;
     if (!canvas.requestPointerLock) return;
@@ -241,6 +245,7 @@ const Game = {
 
   quitToMenu() {
     this.state = 'menu';
+    TouchCtl.release();
     Enemies.clear();
     Loot.clear();
     Weapons.clearAll();
@@ -256,6 +261,7 @@ const Game = {
   togglePause() {
     if (this.state === 'playing') {
       this.state = 'paused';
+      TouchCtl.release();
       if (document.exitPointerLock) document.exitPointerLock();
       UI.showPause();
     } else if (this.state === 'paused') {
@@ -271,6 +277,7 @@ const Game = {
 
   _openLevelUp() {
     this.state = 'levelup';
+    TouchCtl.release();
     if (document.exitPointerLock) document.exitPointerLock();
     this.currentPicks = Upgrades.roll(3);
     UI.showLevelUp(this.currentPicks, c => this._choose(c), this.rerolls);
@@ -301,6 +308,7 @@ const Game = {
 
   _gameOver(win) {
     this.state = 'over';
+    TouchCtl.release();
     this.won = !!win;
     if (document.exitPointerLock) document.exitPointerLock();
 
@@ -443,6 +451,7 @@ const Game = {
   // Pick a starting tier from what the GPU reports, then keep an eye on the
   // frame rate and step down if the machine cannot hold up.
   autoTier() {
+    if (GFX.mobile) return 'low';
     try {
       const c = document.createElement('canvas');
       const gl = c.getContext('webgl2') || c.getContext('webgl');

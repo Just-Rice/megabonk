@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>MEGABONK — 3D Survivor Roguelike</title>
-<link rel="stylesheet" href="css/style.css?v=20260908r">
+<link rel="stylesheet" href="css/style.css?v=20260909b">
 </head>
 <body>
 
@@ -42,6 +44,17 @@
     <div id="toasts"></div>
     <div id="crosshair"></div>
   </div>
+
+  <!-- ===== TOUCH CONTROLS (only shown on coarse-pointer devices) ===== -->
+  <div id="touchlayer">
+    <div id="stick" class="hidden"><div id="stickknob"></div></div>
+    <div id="touchbtns">
+      <div id="btn-jump" class="tbtn">JUMP</div>
+      <div id="btn-dash" class="tbtn big">DASH</div>
+    </div>
+    <div id="btn-pause" class="tbtn small">II</div>
+  </div>
+  <div id="rotate" class="hidden">&#8635;<span>ROTATE YOUR DEVICE</span></div>
 
   <!-- ============ MENU ============ -->
   <div id="menu" class="overlay">
@@ -104,17 +117,18 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="js/util.js?v=20260908r"></script>
-<script src="js/gfx.js?v=20260908r"></script>
-<script src="js/postfx.js?v=20260908r"></script>
-<script src="js/audio.js?v=20260908r"></script>
-<script src="js/world.js?v=20260908r"></script>
-<script src="js/fx.js?v=20260908r"></script>
-<script src="js/player.js?v=20260908r"></script>
-<script src="js/enemies.js?v=20260908r"></script>
-<script src="js/weapons.js?v=20260908r"></script>
-<script src="js/upgrades.js?v=20260908r"></script>
-<script src="js/ui.js?v=20260908r"></script>
-<script src="js/game.js?v=20260908r"></script>
+<script src="js/util.js?v=20260909b"></script>
+<script src="js/gfx.js?v=20260909b"></script>
+<script src="js/postfx.js?v=20260909b"></script>
+<script src="js/audio.js?v=20260909b"></script>
+<script src="js/world.js?v=20260909b"></script>
+<script src="js/fx.js?v=20260909b"></script>
+<script src="js/player.js?v=20260909b"></script>
+<script src="js/enemies.js?v=20260909b"></script>
+<script src="js/weapons.js?v=20260909b"></script>
+<script src="js/upgrades.js?v=20260909b"></script>
+<script src="js/ui.js?v=20260909b"></script>
+<script src="js/touch.js?v=20260909b"></script>
+<script src="js/game.js?v=20260909b"></script>
 </body>
 </html>

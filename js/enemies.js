@@ -236,8 +236,10 @@ const Enemies = {
     }
 
     // ---- trash ----
-    const rate = 0.66 + minute * 0.6 + Math.pow(minute, 1.9) * 0.13;   // spawns per second
-    const cap = Math.min(280, 40 + minute * 27);
+    // hordeScale keeps weaker devices from drowning without changing the curve
+    const hs = GFX.q.hordeScale || 1;
+    const rate = (0.66 + minute * 0.6 + Math.pow(minute, 1.9) * 0.13) * hs;
+    const cap = Math.min(280, 40 + minute * 27) * hs;
     this.spawnTimer += dt * rate;
 
     this.eliteChance = U.clamp((minute - 2.5) * 0.024, 0, 0.28);
