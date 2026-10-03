@@ -44,7 +44,7 @@ canvas#scene{position:absolute;inset:0;width:100%;height:100%;display:block}
 .slot.passive{background:rgba(30,10,50,.6)}
 .slot .lv{position:absolute;right:-4px;bottom:-6px;font-size:12px;background:#000;border-radius:99px;padding:0 5px;color:var(--gold)}
 .slot.maxed{border-color:var(--gold)}
-#dashwrap{width:120px;text-align:center;font-size:11px;letter-spacing:1px;opacity:.9}
+#dashwrap{width:120px;text-align:center;font-size:12px;letter-spacing:1px;opacity:.9}
 #dashbar{height:8px;background:rgba(0,0,0,.6);border:3px solid #000;border-radius:99px;overflow:hidden;margin-bottom:3px}
 #dashfill{height:100%;width:100%;background:var(--sky)}
 
@@ -62,7 +62,8 @@ canvas#scene{position:absolute;inset:0;width:100%;height:100%;display:block}
 /* ---------- OVERLAYS ---------- */
 .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:18px;
   background:radial-gradient(ellipse at center,rgba(20,10,40,.82),rgba(5,3,10,.96));backdrop-filter:blur(3px);z-index:10;text-align:center;padding:20px;
-  overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  touch-action:pan-y pinch-zoom}   /* pinch to zoom, but no double-tap zoom on a fast double tap */
 /* centred when it fits, scrollable from the top when it doesn't: a plain
    justify-content:center pushes the logo and the QUIT button off a short
    landscape phone with no way to reach them */
@@ -74,7 +75,7 @@ canvas#scene{position:absolute;inset:0;width:100%;height:100%;display:block}
 .logo .l1,.logo .l2{font-size:clamp(52px,12vw,132px);letter-spacing:-2px;display:inline-block}
 .logo .l1{color:var(--lime);text-shadow:5px 5px 0 #000,10px 10px 0 rgba(0,0,0,.35);transform:rotate(-3deg)}
 .logo .l2{color:var(--hot);text-shadow:5px 5px 0 #000,10px 10px 0 rgba(0,0,0,.35);transform:rotate(2deg)}
-.tagline{font-family:system-ui,sans-serif;font-weight:600;font-size:14px;letter-spacing:3px;opacity:.75;margin-top:16px;text-transform:uppercase}
+.tagline{font-family:system-ui,sans-serif;font-weight:600;font-size:14px;line-height:1.35;letter-spacing:3px;opacity:.75;margin-top:16px;text-transform:uppercase}
 
 .pick-title,.lu-sub{font-family:system-ui,sans-serif;font-weight:700;letter-spacing:4px;font-size:12px;opacity:.6;margin-bottom:10px}
 #chars{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
@@ -146,6 +147,11 @@ body.touch canvas#scene{touch-action:none}
 body.touch #crosshair{display:none}
 /* the dash meter and its keyboard hint would sit under the DASH button */
 body.touch #dashwrap{display:none}
+/* and a full loadout would run under JUMP: wrap it before the buttons */
+body.touch #bottombar{padding-right:200px}
+/* the buttons only do anything mid-run; on the menu and game-over screens
+   they showed through the overlay as faint grey circles */
+#hud.hidden ~ #touchlayer{display:none}
 
 #stick{position:absolute;width:0;height:0;pointer-events:none}
 #stick::before{content:"";position:absolute;left:-62px;top:-62px;width:124px;height:124px;
@@ -196,7 +202,7 @@ body.touch #rotate:not(.hidden){display:flex;position:fixed;inset:0;z-index:60;
   .card .nm{font-size:16px}
   .card .ds{font-size:11px;line-height:1.35}
   .card .lvpill{font-size:11px}
-  #statlist{font-size:11px;grid-template-columns:repeat(2,minmax(120px,1fr));gap:0 18px}
+  #statlist{font-size:12px;grid-template-columns:repeat(2,minmax(120px,1fr));gap:0 18px}
   #go-stats{font-size:13px}
   .controls{font-size:11px}
 }

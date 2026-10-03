@@ -4,7 +4,9 @@
    Loads the game at a desktop and a phone viewport and fails on any
    console error or uncaught exception. It also checks the two things
    the mobile pass fixed: every menu / pause control can be reached on a
-   short landscape phone, and the pickers work from the keyboard.
+   short landscape phone, the pickers work from the keyboard, the menu
+   works upright on a phone while a run started upright pauses behind
+   the rotate prompt, and pinch-zoom is not switched off.
 
      npm i --no-save playwright      # once; nothing is added to the repo
      node tests/smoke.js
@@ -78,8 +80,22 @@ async function reachable(page, overlay) {
     await page.goto(url);
     await page.waitForFunction(() => document.getElementById('loading').classList.contains('hidden'), null, { timeout: 20000 });
 
-    const portraitPhone = await page.evaluate(() => !document.getElementById('rotate').classList.contains('hidden'));
-    if (!portraitPhone) {
+    const zoomOff = await page.evaluate(() => /user-scalable=no|maximum-scale=1(\D|$)/.test(document.querySelector('meta[name=viewport]').content));
+    if (zoomOff) problems.push('viewport meta disables pinch-zoom');
+
+    const portraitPhone = opts.hasTouch && opts.viewport.height > opts.viewport.width;
+    if (await page.evaluate(() => !document.getElementById('rotate').classList.contains('hidden'))) {
+      problems.push('rotate prompt covers the menu');
+    }
+
+    if (portraitPhone) {
+      const off = await reachable(page, '#menu');
+      if (off.length) problems.push('menu controls out of reach: ' + off.join(', '));
+      await page.evaluate(() => Game.start());
+      await page.waitForTimeout(300);
+      const st = await page.evaluate(() => [Game.state, !document.getElementById('rotate').classList.contains('hidden')]);
+      if (st[0] !== 'paused' || !st[1]) problems.push('upright run: state=' + st[0] + ' prompt=' + st[1]);
+    } else {
       const off = await reachable(page, '#menu');
       if (off.length) problems.push('menu controls out of reach: ' + off.join(', '));
 
@@ -103,7 +119,7 @@ async function reachable(page, overlay) {
 
     await page.waitForTimeout(300);
     if (errors.length) problems.push('console errors:\n    ' + errors.join('\n    '));
-    console.log((problems.length ? 'FAIL ' : 'ok   ') + name + (portraitPhone ? ' (rotate prompt shown)' : ''));
+    console.log((problems.length ? 'FAIL ' : 'ok   ') + name + (portraitPhone ? ' (upright)' : ''));
     problems.forEach(p => console.log('  - ' + p));
     failed += problems.length ? 1 : 0;
     await ctx.close();

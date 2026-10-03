@@ -36,8 +36,8 @@ with a touchscreen but a real mouse keeps the desktop scheme.
 
 Left thumb anywhere on the left of the screen raises a **virtual stick** — it is analog, so a light
 push walks and a full push runs. Right thumb drags to swing the camera. **DASH** and **JUMP** sit
-under your right thumb, pause is top right. Portrait shows a prompt to rotate, since the HUD needs
-the long axis.
+under your right thumb, pause is top right. The menu works upright, but a run needs the long axis:
+start one in portrait and it waits, paused, behind a prompt to rotate.
 
 Touch devices also start on the LOW graphics tier with the render scale capped at 1× (phone DPRs are
 often 3, and rendering at native resolution is the single most expensive mistake on mobile), fewer

@@ -240,6 +240,7 @@ const Game = {
 
     this.state = 'playing';
     this.lockPointer();
+    TouchCtl.resetZoom();
     UI.toast('BONK!', '#b6ff3d');
   },
 
