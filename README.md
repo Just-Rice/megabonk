@@ -16,6 +16,16 @@ open index.html            # macOS — works directly from file://
 python3 -m http.server 8765 && open http://localhost:8765
 ```
 
+### Smoke test
+
+`tests/smoke.js` loads the game at a desktop and two phone viewports and fails on any console
+error, an overlay control you can't scroll to, or a picker that doesn't answer the keyboard.
+
+```bash
+npm i --no-save playwright && npx playwright install chromium   # once
+node tests/smoke.js
+```
+
 ## Controls
 
 The game detects the device by **pointer capability**, not by sniffing the user agent: a coarse
