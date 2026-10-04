@@ -27,6 +27,7 @@ const UI = {
     this._buildCharPicker();
 
     document.querySelectorAll('[data-gfx] .gfx-opt').forEach(el => {
+      this._pressable(el);
       el.onclick = () => {
         Game._qualityLocked = true;      // an explicit choice wins over auto-tuning
         Game.setQuality(el.dataset.q);
@@ -40,6 +41,7 @@ const UI = {
     document.getElementById('quitbtn').onclick = () => Game.quitToMenu();
     document.getElementById('againbtn').onclick = () => Game.toMenuFromGameOver();
     this.el.rerollBtn.onclick = () => Game.reroll();
+    this._pressable(this.el.rerollBtn);
 
     this.showBest();
   },
@@ -47,6 +49,22 @@ const UI = {
   syncQuality() {
     document.querySelectorAll('[data-gfx] .gfx-opt').forEach(el => {
       el.classList.toggle('sel', el.dataset.q === GFX.tier);
+      el.setAttribute('aria-pressed', el.dataset.q === GFX.tier);
+    });
+  },
+
+  // the pickers are divs; give them a tab stop and Enter / Space like a
+  // real button. The key is swallowed here so the window handler doesn't
+  // also read Enter as "start the run" or Space as "jump".
+  _pressable(el) {
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      el.click();
     });
   },
 
@@ -63,10 +81,15 @@ const UI = {
     CHARACTERS.forEach((c, i) => {
       const d = document.createElement('div');
       d.className = 'char' + (i === 0 ? ' sel' : '');
-      d.innerHTML = `<div class="ico">${c.icon}</div><div class="nm">${c.name}</div><div class="ds">${c.desc}</div>`;
+      d.innerHTML = `<div class="ico" aria-hidden="true">${c.icon}</div><div class="nm">${c.name}</div><div class="ds">${c.desc}</div>`;
+      this._pressable(d);
+      d.setAttribute('aria-pressed', i === 0);
       d.onclick = () => {
         Game.selectedChar = i;
-        [...this.el.chars.children].forEach((n, j) => n.classList.toggle('sel', i === j));
+        [...this.el.chars.children].forEach((n, j) => {
+          n.classList.toggle('sel', i === j);
+          n.setAttribute('aria-pressed', i === j);
+        });
         SFX.resume(); SFX.tone(700, 0.06, 'square', 0.12);
       };
       this.el.chars.appendChild(d);
@@ -151,17 +174,19 @@ const UI = {
       const lvlText = c.kind === 'bonus' ? '' :
         (c.level === 0 ? 'NEW' : 'LV ' + c.level + ' → ' + (c.level + 1));
       d.innerHTML =
-        `<div class="ico">${c.icon}</div>` +
+        `<div class="ico" aria-hidden="true">${c.icon}</div>` +
         `<div class="tag">${c.tag}</div>` +
         `<div class="nm">${c.name}</div>` +
         `<div class="ds">${c.desc}</div>` +
         `<div class="lvpill">${lvlText}</div>`;
       d.onclick = () => onPick(c);
+      this._pressable(d);
       this.el.cards.appendChild(d);
     });
 
     this.el.rerolls.textContent = rerollsLeft;
     this.el.rerollBtn.classList.toggle('off', rerollsLeft <= 0);
+    this.el.rerollBtn.setAttribute('aria-disabled', rerollsLeft <= 0);
 
     this.el.levelup.classList.remove('hidden');
     this.el.hud.classList.remove('hidden');

@@ -80,11 +80,32 @@ const TouchCtl = {
     window.addEventListener('orientationchange', () => setTimeout(() => this.checkOrientation(), 250));
   },
 
-  // the HUD needs the long axis; nag gently rather than trying to letterbox
+  // the HUD needs the long axis; nag gently rather than trying to letterbox.
+  // Only a run needs it: the menu and game-over screens work upright. A run
+  // that finds itself upright pauses, so the horde can't bonk you while the
+  // prompt covers the screen.
+  _rotateShown: false,
   checkOrientation() {
     if (!this.enabled || !this.el.rotate) return;
     const portrait = window.innerHeight > window.innerWidth;
-    this.el.rotate.classList.toggle('hidden', !portrait);
+    const inRun = Game.state === 'playing' || Game.state === 'levelup' || Game.state === 'paused';
+    const show = portrait && inRun;
+    if (show && Game.state === 'playing') Game.togglePause();
+    if (show === this._rotateShown) return;
+    this._rotateShown = show;
+    this.el.rotate.classList.toggle('hidden', !show);
+  },
+
+  // a pinch on the menu would otherwise carry into the run, where the
+  // touch layer blocks pinching back out; briefly clamping the scale
+  // snaps the page back to 1x
+  resetZoom() {
+    if (!this.enabled || !window.visualViewport || window.visualViewport.scale <= 1.01) return;
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    const content = meta.content;
+    meta.content = content + ',maximum-scale=1';
+    setTimeout(() => { meta.content = content; }, 300);
   },
 
   _isPlaying() { return Game.state === 'playing'; },
@@ -153,6 +174,7 @@ const TouchCtl = {
   // called every frame from the game loop
   apply(input) {
     if (!this.enabled) return;
+    this.checkOrientation();                 // a run started upright
     if (this.moveId !== null && (this.axis.x || this.axis.y)) {
       input.axis = this.axis;
     } else {
